@@ -52,9 +52,9 @@ export default function App() {
     setIsProcessing(true);
     setError("");
 
-    // API 키와 모델 자동 전환 로직 (403 에러 해결의 핵심!)
+    // API 키와 모델 설정
     let apiKey = "";
-    let modelName = "gemini-2.5-flash-preview-09-2025"; // 기본값 (제미나이 내부 테스트용)
+    let modelName = "gemini-2.5-flash-preview-09-2025";
 
     try {
       if (
@@ -63,11 +63,20 @@ export default function App() {
         import.meta.env.VITE_GEMINI_API_KEY
       ) {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        // 개인 API 키가 감지되면, 권한 에러(403)가 나지 않는 최신 범용 모델로 자동 전환합니다.
+        // 개인 API 키가 있으면 403 에러 방지를 위해 범용 모델로 강제 전환
         modelName = "gemini-1.5-flash";
       }
     } catch (e) {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
+    }
+
+    // [디버깅용 추가 코드] API 키가 아예 없는 경우 403 에러가 나기 전에 먼저 알려줍니다.
+    if (!apiKey || apiKey.trim() === "") {
+      setError(
+        `🚨 오류: API 키가 설정되지 않았습니다. Vercel 환경 변수(VITE_GEMINI_API_KEY)를 다시 확인해 주세요.`,
+      );
+      setIsProcessing(false);
+      return;
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -143,7 +152,17 @@ export default function App() {
         });
 
         if (!response.ok) {
-          throw new Error(`API 호출 실패 (상태 코드: ${response.status})`);
+          // [디버깅용 추가 코드] 구글 서버가 보내는 정확한 에러 메시지를 읽어와서 화면에 뿌려줍니다.
+          const errorData = await response.json().catch(() => ({}));
+          let detailedError = "";
+
+          if (errorData.error && errorData.error.message) {
+            detailedError = ` (${errorData.error.message})`;
+          } else if (response.status === 403) {
+            detailedError = ` (이유: Vercel에 등록한 API 키가 유효하지 않거나, 사용할 권한이 없습니다.)`;
+          }
+
+          throw new Error(`상태 코드: ${response.status}${detailedError}`);
         }
 
         const data = await response.json();
