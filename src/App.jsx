@@ -33,17 +33,16 @@ export default function App() {
       const dataUrl = event.target.result;
       setImageSrc(dataUrl);
 
-      // API에 보낼 base64 데이터만 추출 (앞의 data:image/jpeg;base64, 부분 제거)
       const base64 = dataUrl.split(",")[1];
       setBase64Data(base64);
       setImageMimeType(file.type);
-      setDimensions([]); // 새 이미지 업로드 시 기존 치수 초기화
+      setDimensions([]);
       setError("");
     };
     reader.readAsDataURL(file);
   };
 
-  // 제미나이 API 호출 함수 (지수 백오프 재시도 로직 포함)
+  // 제미나이 API 호출 함수
   const analyzeImage = async () => {
     if (!base64Data) {
       setError("도면 이미지를 업로드해주세요.");
@@ -53,9 +52,25 @@ export default function App() {
     setIsProcessing(true);
     setError("");
 
-    // 플랫폼에서 실행 시 자동으로 주입되는 API 키 (빈 문자열 유지)
-    const apiKey = "";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    // API 키와 모델 자동 전환 로직 (403 에러 해결의 핵심!)
+    let apiKey = "";
+    let modelName = "gemini-2.5-flash-preview-09-2025"; // 기본값 (제미나이 내부 테스트용)
+
+    try {
+      if (
+        typeof import.meta !== "undefined" &&
+        import.meta.env &&
+        import.meta.env.VITE_GEMINI_API_KEY
+      ) {
+        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        // 개인 API 키가 감지되면, 권한 에러(403)가 나지 않는 최신 범용 모델로 자동 전환합니다.
+        modelName = "gemini-1.5-flash";
+      }
+    } catch (e) {
+      console.warn("환경 변수를 불러오지 못했습니다.", e);
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [
@@ -138,7 +153,7 @@ export default function App() {
           const parsedResult = JSON.parse(responseText);
           setDimensions(parsedResult.dimensions || []);
           setIsProcessing(false);
-          return; // 성공 시 종료
+          return;
         } else {
           throw new Error("API 응답에서 결과를 찾을 수 없습니다.");
         }
@@ -155,7 +170,6 @@ export default function App() {
     }
   };
 
-  // 캔버스에 이미지와 텍스트 그리기
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -164,14 +178,10 @@ export default function App() {
     const img = new Image();
 
     img.onload = () => {
-      // 캔버스 크기를 원본 이미지 크기에 맞춤
       canvas.width = img.width;
       canvas.height = img.height;
-
-      // 1. 원본 이미지 그리기
       ctx.drawImage(img, 0, 0);
 
-      // 2. 도출된 수치 데이터가 있으면 방 중앙에 텍스트 그리기
       if (dimensions && dimensions.length > 0) {
         const fontSize = Math.max(10, Math.floor(canvas.width * 0.01));
         ctx.font = `bold ${fontSize}px sans-serif`;
@@ -189,13 +199,11 @@ export default function App() {
           ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
           ctx.fillStyle = "#1e3a8a";
 
-          // 가로 길이 (수평)
           if (wText) {
             ctx.strokeText(wText, xPos, yPos - fontSize * 0.5);
             ctx.fillText(wText, xPos, yPos - fontSize * 0.5);
           }
 
-          // 세로 길이 (수직 회전)
           if (hText) {
             const wWidth = wText ? ctx.measureText(wText).width : 0;
             ctx.save();
@@ -211,7 +219,6 @@ export default function App() {
     img.src = imageSrc;
   }, [imageSrc, dimensions]);
 
-  // 완성된 이미지 다운로드
   const downloadImage = () => {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL("image/png");
@@ -222,11 +229,8 @@ export default function App() {
   };
 
   return (
-    // 배경을 은은한 회색으로, 최소 높이를 화면 전체(min-h-screen)로 설정
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 flex justify-center items-start">
-      {/* 메인 앱 컨테이너: 둥근 모서리, 부드러운 그림자, 최소 높이를 90vh로 주어 텅 빈 느낌 방지 */}
       <div className="w-full max-w-lg bg-white rounded-[2rem] shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
-        {/* 상단 헤더: 최신 트렌드인 그라데이션 적용 */}
         <div className="bg-gradient-to-r from-indigo-600 to-blue-500 p-6 text-white">
           <h1 className="text-2xl font-black flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-indigo-200" />
@@ -237,9 +241,7 @@ export default function App() {
           </p>
         </div>
 
-        {/* 메인 콘텐츠 영역: flex-1을 주어 남는 공간을 꽉 채움 */}
         <div className="p-6 flex flex-col gap-6 flex-1">
-          {/* 1. 이미지 업로드 영역 */}
           <div className="flex flex-col gap-3">
             <label className="font-bold text-slate-700 text-lg">
               1. 평면도 업로드
@@ -263,7 +265,6 @@ export default function App() {
             </label>
           </div>
 
-          {/* 에러 메시지 */}
           {error && (
             <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm flex items-start gap-3 border border-red-100">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -271,7 +272,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 2. AI 계산 버튼: 둥글고 세련된 그라데이션 버튼 */}
           <button
             onClick={analyzeImage}
             disabled={!imageSrc || isProcessing}
@@ -291,7 +291,6 @@ export default function App() {
             )}
           </button>
 
-          {/* 3. 결과 미리보기 영역: 남는 공간을 자연스럽게 채우도록 flex-1 할당 */}
           <div className="flex flex-col gap-3 flex-1">
             <label className="font-bold text-slate-700 text-lg">
               결과 미리보기
@@ -315,7 +314,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* 다운로드 버튼 */}
           {dimensions.length > 0 && (
             <button
               onClick={downloadImage}
