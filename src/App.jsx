@@ -18,7 +18,6 @@ export default function App() {
   const [error, setError] = useState("");
   const canvasRef = useRef(null);
 
-  // 이미지 업로드 처리 함수
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -42,7 +41,6 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // 제미나이 API 호출 함수
   const analyzeImage = async () => {
     if (!base64Data) {
       setError("도면 이미지를 업로드해주세요.");
@@ -52,7 +50,6 @@ export default function App() {
     setIsProcessing(true);
     setError("");
 
-    // API 키 설정 및 최신 AI 모델(2.5버전) 이름으로 변경 완료!
     let apiKey = "";
     const modelName = "gemini-2.5-flash";
 
@@ -70,7 +67,7 @@ export default function App() {
 
     if (!apiKey || apiKey.trim() === "") {
       setError(
-        `🚨 오류: API 키가 설정되지 않았습니다. Vercel 환경 변수(VITE_GEMINI_API_KEY)를 다시 확인해 주세요.`,
+        `🚨 오류: API 키가 설정되지 않았습니다. Vercel 환경 변수를 다시 확인해 주세요.`,
       );
       setIsProcessing(false);
       return;
@@ -78,12 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
+    // AI에게 방의 '정중앙 빈 공간'을 찾도록 명령을 더 강력하게 수정했습니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. \n\n**1단계 (매우 중요 - 절대 기준 찾기):** 도면 이미지 전체(특히 하단이나 우측의 표, 범례 등)를 읽어서 특정 구역의 '면적(㎡)'이나 '축척(Scale)' 정보가 글씨로 적혀 있는지 찾아내. 이를 바탕으로 완벽한 축척(Scale) 기준을 스스로 설정해.\n\n**2단계 (치수 계산 및 위치 지정):** 확정된 축척을 바탕으로, 도면 내에 존재하는 **모든 사각형 공간(방, 교실, 화장실, 복도 등 식별 가능한 모든 구획)**을 찾아내어, 각각의 가로(Width)와 세로(Height) 실제 예상 길이를 계산해줘.\n\n**[중요 - 수치 표시 위치]:** 수치를 표시할 X, Y 좌표(0~100 백분율)는 반드시 **"해당 사각형 공간의 정중앙(Center)"**으로 지정해줘. 방 한가운데에 글씨가 예쁘게 들어갈 수 있도록 말이야.\n\n각 구획에 대해 다음 정보를 제공해줘:\n1. 가로 길이 텍스트 (예: 'W: 4000mm')\n2. 세로 길이 텍스트 (예: 'H: 3000mm')\n3. 사각형 정중앙의 X, Y 좌표 (0~100 백분율)`,
+              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계:** 도면 내의 모든 독립된 방과 공간(예: 창고, 화장실, 시설관리실 등)을 찾아 가로(W)와 세로(H) 길이를 계산해.\n\n**[위치 지정 규칙 - 매우 중요!]:** X, Y 좌표는 선이나 벽면 위가 아니라, 반드시 **"해당 방의 내부 빈 공간 정중앙"**이어야 해. 방 한가운데에 텍스트 상자를 겹치지 않게 놓기 위함이야.`,
             },
             {
               inlineData: {
@@ -97,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 도면 내의 모든 구획(방)을 찾아내어 가로/세로 길이를 계산하고, 해당 **방의 정중앙 좌표(X, Y)**를 추출해. 치수선 데이터(start/end)가 아니라 방 중앙의 단일 좌표만 필요해. 응답은 반드시 JSON(JavaScript Object Notation, 자바스크립트 객체 표기법) 형식이어야 해.",
+            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 방의 테두리가 아니라 '공간의 내부 중앙(Center)' X, Y 백분율 좌표를 추출해.",
           },
         ],
       },
@@ -113,19 +111,19 @@ export default function App() {
                 properties: {
                   widthText: {
                     type: "STRING",
-                    description: "도출된 가로 길이 (예: W: 3000mm)",
+                    description: "가로 길이 (예: W: 3000mm)",
                   },
                   heightText: {
                     type: "STRING",
-                    description: "도출된 세로 길이 (예: H: 4000mm)",
+                    description: "세로 길이 (예: H: 4000mm)",
                   },
                   x: {
                     type: "NUMBER",
-                    description: "방 정중앙 X 좌표 백분율 (0-100)",
+                    description: "방 내부 빈 공간 정중앙 X 좌표 (0-100)",
                   },
                   y: {
                     type: "NUMBER",
-                    description: "방 정중앙 Y 좌표 백분율 (0-100)",
+                    description: "방 내부 빈 공간 정중앙 Y 좌표 (0-100)",
                   },
                 },
                 required: ["widthText", "heightText", "x", "y"],
@@ -149,18 +147,7 @@ export default function App() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          let detailedError = "";
-
-          if (errorData.error && errorData.error.message) {
-            detailedError = ` (${errorData.error.message})`;
-          } else if (response.status === 403) {
-            detailedError = ` (이유: Vercel에 등록한 API 키가 유효하지 않거나, 사용할 권한이 없습니다.)`;
-          } else if (response.status === 404) {
-            detailedError = ` (이유: 요청한 AI 모델을 찾을 수 없습니다. 코드를 최신 버전으로 업데이트해야 합니다.)`;
-          }
-
-          throw new Error(`상태 코드: ${response.status}${detailedError}`);
+          throw new Error(`상태 코드: ${response.status}`);
         }
 
         const data = await response.json();
@@ -172,7 +159,7 @@ export default function App() {
           setIsProcessing(false);
           return;
         } else {
-          throw new Error("API 응답에서 결과를 찾을 수 없습니다.");
+          throw new Error("결과를 찾을 수 없습니다.");
         }
       } catch (err) {
         if (attempt === delays.length) {
@@ -187,6 +174,7 @@ export default function App() {
     }
   };
 
+  // 캔버스 그리기 로직: 수치를 방 중앙에 깔끔한 '라벨 박스' 형태로 그리도록 전면 개편
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -200,7 +188,8 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        const fontSize = Math.max(10, Math.floor(canvas.width * 0.01));
+        // 도면 크기에 맞춰 글씨 크기 자동 조절
+        const fontSize = Math.max(12, Math.floor(canvas.width * 0.012));
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -209,26 +198,55 @@ export default function App() {
           const xPos = (dim.x / 100) * canvas.width;
           const yPos = (dim.y / 100) * canvas.height;
 
-          const wText = dim.widthText;
-          const hText = dim.heightText;
+          const wText = dim.widthText || "";
+          const hText = dim.heightText || "";
 
-          ctx.lineWidth = Math.max(2, fontSize * 0.25);
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-          ctx.fillStyle = "#1e3a8a";
+          // 글씨 뒤에 깔아줄 흰색 반투명 박스(말풍선) 크기 계산
+          const wWidth = ctx.measureText(wText).width;
+          const hWidth = ctx.measureText(hText).width;
+          const maxWidth = Math.max(wWidth, hWidth);
 
-          if (wText) {
-            ctx.strokeText(wText, xPos, yPos - fontSize * 0.5);
-            ctx.fillText(wText, xPos, yPos - fontSize * 0.5);
+          const paddingX = fontSize * 0.8;
+          const paddingY = fontSize * 0.6;
+          const boxWidth = maxWidth + paddingX * 2;
+          const boxHeight = wText && hText ? fontSize * 2.5 : fontSize * 1.5;
+
+          // 1. 박스 그리기 (배경은 흰색 90%, 테두리는 파란색)
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.beginPath();
+          // 모서리가 둥근 사각형 (최신 브라우저 지원)
+          if (ctx.roundRect) {
+            ctx.roundRect(
+              xPos - boxWidth / 2,
+              yPos - boxHeight / 2,
+              boxWidth,
+              boxHeight,
+              6,
+            );
+          } else {
+            ctx.rect(
+              xPos - boxWidth / 2,
+              yPos - boxHeight / 2,
+              boxWidth,
+              boxHeight,
+            );
           }
+          ctx.fill();
 
-          if (hText) {
-            const wWidth = wText ? ctx.measureText(wText).width : 0;
-            ctx.save();
-            ctx.translate(xPos + wWidth / 2 + fontSize * 0.8, yPos);
-            ctx.rotate(-Math.PI / 2);
-            ctx.strokeText(hText, 0, 0);
-            ctx.fillText(hText, 0, 0);
-            ctx.restore();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = "#4f46e5"; // 인디고 색상 테두리
+          ctx.stroke();
+
+          // 2. 글씨 그리기 (가로, 세로를 위아래로 나란히 배치)
+          ctx.fillStyle = "#1e3a8a"; // 진한 파란색 글씨
+
+          if (wText && hText) {
+            // 두 줄일 경우 위 아래로 정렬
+            ctx.fillText(wText, xPos, yPos - fontSize * 0.6);
+            ctx.fillText(hText, xPos, yPos + fontSize * 0.6);
+          } else if (wText || hText) {
+            // 한 줄일 경우 정중앙
+            ctx.fillText(wText || hText, xPos, yPos);
           }
         });
       }
