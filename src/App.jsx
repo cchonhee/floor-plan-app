@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // AI에게 방의 '정중앙 빈 공간'을 찾도록 명령을 더 강력하게 수정했습니다.
+    // AI 명령어를 강력하게 수정: "붉은색 실선 공간만 찾을 것"
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계:** 도면 내의 모든 독립된 방과 공간(예: 창고, 화장실, 시설관리실 등)을 찾아 가로(W)와 세로(H) 길이를 계산해.\n\n**[위치 지정 규칙 - 매우 중요!]:** X, Y 좌표는 선이나 벽면 위가 아니라, 반드시 **"해당 방의 내부 빈 공간 정중앙"**이어야 해. 방 한가운데에 텍스트 상자를 겹치지 않게 놓기 위함이야.`,
+              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 하단이나 우측의 표에서 면적(㎡) 정보를 찾아 축척의 기준으로 삼아.\n\n**2단계 (가장 중요!):** 도면에서 **반드시 "굵은 붉은색 실선"으로 테두리가 쳐진 공간들만** 찾아내. 계단실, 일반 복도 등 붉은색 테두리가 없는 공간이나 점선으로 된 구역은 계산 대상에서 완전히 제외하고 철저히 무시해.\n\n**3단계 (위치 지정 규칙):** 찾아낸 '붉은색 테두리 공간' 각각에 대해 가로(W), 세로(H) 길이를 계산하고, 수치를 적어넣을 X, Y 좌표를 **"해당 붉은색 공간 내부의 완전한 정중앙 빈 곳"**으로 지정해. 방 한가운데에 텍스트 상자를 예쁘게 놓기 위함이야.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 방의 테두리가 아니라 '공간의 내부 중앙(Center)' X, Y 백분율 좌표를 추출해.",
+            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 화면에서 '굵은 붉은색 실선'으로 표시된 타겟 구역들만 엄격하게 식별하여 가로/세로 길이를 계산하고, 그 구역 내부의 정중앙 좌표(Center X, Y)를 추출해. 붉은색 테두리가 없는 영역의 정보는 절대 응답에 포함하지 마. 응답은 반드시 JSON(JavaScript Object Notation, 자바스크립트 객체 표기법) 형식이어야 해.",
           },
         ],
       },
@@ -119,11 +119,13 @@ export default function App() {
                   },
                   x: {
                     type: "NUMBER",
-                    description: "방 내부 빈 공간 정중앙 X 좌표 (0-100)",
+                    description:
+                      "붉은색 공간 내부 정중앙 X 좌표 백분율 (0-100)",
                   },
                   y: {
                     type: "NUMBER",
-                    description: "방 내부 빈 공간 정중앙 Y 좌표 (0-100)",
+                    description:
+                      "붉은색 공간 내부 정중앙 Y 좌표 백분율 (0-100)",
                   },
                 },
                 required: ["widthText", "heightText", "x", "y"],
@@ -174,7 +176,6 @@ export default function App() {
     }
   };
 
-  // 캔버스 그리기 로직: 수치를 방 중앙에 깔끔한 '라벨 박스' 형태로 그리도록 전면 개편
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -188,7 +189,6 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        // 도면 크기에 맞춰 글씨 크기 자동 조절
         const fontSize = Math.max(12, Math.floor(canvas.width * 0.012));
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = "center";
@@ -201,7 +201,6 @@ export default function App() {
           const wText = dim.widthText || "";
           const hText = dim.heightText || "";
 
-          // 글씨 뒤에 깔아줄 흰색 반투명 박스(말풍선) 크기 계산
           const wWidth = ctx.measureText(wText).width;
           const hWidth = ctx.measureText(hText).width;
           const maxWidth = Math.max(wWidth, hWidth);
@@ -211,10 +210,8 @@ export default function App() {
           const boxWidth = maxWidth + paddingX * 2;
           const boxHeight = wText && hText ? fontSize * 2.5 : fontSize * 1.5;
 
-          // 1. 박스 그리기 (배경은 흰색 90%, 테두리는 파란색)
           ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
           ctx.beginPath();
-          // 모서리가 둥근 사각형 (최신 브라우저 지원)
           if (ctx.roundRect) {
             ctx.roundRect(
               xPos - boxWidth / 2,
@@ -234,18 +231,15 @@ export default function App() {
           ctx.fill();
 
           ctx.lineWidth = 1.5;
-          ctx.strokeStyle = "#4f46e5"; // 인디고 색상 테두리
+          ctx.strokeStyle = "#4f46e5";
           ctx.stroke();
 
-          // 2. 글씨 그리기 (가로, 세로를 위아래로 나란히 배치)
-          ctx.fillStyle = "#1e3a8a"; // 진한 파란색 글씨
+          ctx.fillStyle = "#1e3a8a";
 
           if (wText && hText) {
-            // 두 줄일 경우 위 아래로 정렬
             ctx.fillText(wText, xPos, yPos - fontSize * 0.6);
             ctx.fillText(hText, xPos, yPos + fontSize * 0.6);
           } else if (wText || hText) {
-            // 한 줄일 경우 정중앙
             ctx.fillText(wText || hText, xPos, yPos);
           }
         });
