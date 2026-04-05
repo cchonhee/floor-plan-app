@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // 프롬프트를 아주 단순하고 강력하게 바꿨습니다. "글씨 위치를 찾아라, 그리고 중복해서 대답하지 마라!"
+    // [핵심 변경] 미터(m) 단위 강제 변환 및 좁은방/넓은방 위치 지정 규칙을 명확하게 추가했습니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야.\n\n1단계: 도면의 축척을 파악해.\n\n2단계: 도면에 적힌 '방 이름(용도) 글씨' (예: 창고, 탈의실, 매점 등)를 OCR로 읽어내고, 그 방의 가로(W), 세로(H) 길이를 무조건 계산해.\n\n3단계 (위치): X, Y 좌표(0~100)는 테두리가 아니라 **네가 읽어낸 '방 이름 글씨'의 한가운데 위치**로 찍어.\n\n4단계 (절대 규칙): 격자무늬에 속지 마! 동일한 방 이름(예: '매점')에 대해서는 **절대 2개 이상 데이터를 만들지 말고 딱 1개만** 출력해!`,
+              text: `다음은 건축 평면도 이미지야.\n\n1단계: 도면의 축척을 파악해.\n\n2단계: 도면에 적힌 모든 '방 이름(용도)'을 찾아내고, 각 방의 가로(W), 세로(H) 길이를 계산해.\n\n3단계 (단위 변환 - 매우 중요): 계산된 길이는 mm가 아닌 **미터(m) 단위로 소수점 첫째 자리까지** 변환해 (예: 3600mm -> 3.6m). 그리고 'W:', 'H:' 같은 접두사는 절대 붙이지 말고 오직 숫자와 m만 남겨!\n\n4단계 (위치 및 중복 방지): 동일한 방은 1번만 출력해. 수치를 표시할 X, Y 좌표(0~100)는 다음 규칙을 엄격히 따라:\n- **공간이 좁은 왼쪽 방들 (창고, 화장실, 탈의실, 세면실, 숙직실 등):** 방 안에 수치를 넣으면 좁아서 안 되니까, 아예 도면의 **가장 왼쪽 바깥 여백 (X좌표 약 10~15% 부근)**으로 X좌표를 확 빼버려. Y좌표는 해당 방의 높이에 맞춰.\n- **공간이 넓은 방들 (매점, 시설관리실, 탁구장 등):** 도면에 적힌 방 이름 글씨의 가로 중앙(X)에 맞추되, Y좌표는 **글씨의 바로 위쪽**에 위치하도록 글씨보다 조금 더 작은 값으로 설정해.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 도면 OCR 및 치수 계산 AI야. 방 이름 글씨의 X, Y 좌표를 찾고 수치를 계산해. 데이터 중복을 절대 금지하며, 방 이름 1개당 데이터 1개만 JSON 양식으로 출력해.",
+            text: "너는 도면 치수 계산 및 UI 배치 전문가야. 치수는 무조건 '3.6m' 처럼 W,H 없이 미터 단위로만 출력해. 좁은 방은 도면 왼쪽 바깥으로 X좌표를 빼고, 넓은 방은 방 이름 위에 배치해. JSON 형식으로만 응답해.",
           },
         ],
       },
@@ -113,15 +113,23 @@ export default function App() {
                     type: "STRING",
                     description: "방 이름 (예: 매점)",
                   },
-                  widthText: { type: "STRING", description: "가로 길이" },
-                  heightText: { type: "STRING", description: "세로 길이" },
+                  widthText: {
+                    type: "STRING",
+                    description: "가로 길이 (예: 3.6m)",
+                  },
+                  heightText: {
+                    type: "STRING",
+                    description: "세로 길이 (예: 6.0m)",
+                  },
                   x: {
                     type: "NUMBER",
-                    description: "방 이름 '글씨'의 X 좌표 백분율",
+                    description:
+                      "X 좌표 백분율 (좁은방은 10~15, 넓은방은 글자중앙)",
                   },
                   y: {
                     type: "NUMBER",
-                    description: "방 이름 '글씨'의 Y 좌표 백분율",
+                    description:
+                      "Y 좌표 백분율 (좁은방은 방의Y, 넓은방은 글자바로위)",
                   },
                 },
                 required: ["roomName", "widthText", "heightText", "x", "y"],
@@ -154,8 +162,6 @@ export default function App() {
         if (responseText) {
           const parsedResult = JSON.parse(responseText);
 
-          // [코드 레벨의 완벽한 안전장치]
-          // AI가 말을 안 듣고 '매점'을 3개씩 만들면, 여기서 강제로 첫 번째 '매점' 하나만 남기고 다 버립니다!
           const uniqueDimensions = [];
           const seenRooms = new Set();
 
@@ -209,9 +215,9 @@ export default function App() {
         ctx.textBaseline = "middle";
 
         dimensions.forEach((dim) => {
-          // AI가 찾아낸 글씨의 정중앙 좌표
-          const textCenterX = (dim.x / 100) * canvas.width;
-          const textCenterY = (dim.y / 100) * canvas.height;
+          // AI가 지시받은 규칙대로 뱉어낸 좌표를 그대로 중앙점으로 사용합니다.
+          const centerX = (dim.x / 100) * canvas.width;
+          const centerY = (dim.y / 100) * canvas.height;
 
           const wText = dim.widthText || "";
           const hText = dim.heightText || "";
@@ -224,25 +230,21 @@ export default function App() {
           const boxWidth = maxWidth + paddingX * 2;
           const boxHeight = wText && hText ? fontSize * 2.4 : fontSize * 1.4;
 
-          // 글씨를 가리지 않게 살짝만 아래로 내립니다.
-          const yOffset = fontSize * 1.3;
-          const boxCenterY = textCenterY + yOffset;
-
-          // 박스 그리기
+          // 대표님의 예시 이미지처럼 쨍한 파란색 계열로 디자인을 맞췄습니다.
           ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
           ctx.beginPath();
           if (ctx.roundRect) {
             ctx.roundRect(
-              textCenterX - boxWidth / 2,
-              boxCenterY - boxHeight / 2,
+              centerX - boxWidth / 2,
+              centerY - boxHeight / 2,
               boxWidth,
               boxHeight,
               4,
             );
           } else {
             ctx.rect(
-              textCenterX - boxWidth / 2,
-              boxCenterY - boxHeight / 2,
+              centerX - boxWidth / 2,
+              centerY - boxHeight / 2,
               boxWidth,
               boxHeight,
             );
@@ -250,16 +252,16 @@ export default function App() {
           ctx.fill();
 
           ctx.lineWidth = 1.5;
-          ctx.strokeStyle = "#4f46e5";
+          ctx.strokeStyle = "#2563eb"; // 선명한 파란색 테두리
           ctx.stroke();
 
           // 글씨 그리기
-          ctx.fillStyle = "#1e3a8a";
+          ctx.fillStyle = "#2563eb"; // 선명한 파란색 텍스트
           if (wText && hText) {
-            ctx.fillText(wText, textCenterX, boxCenterY - fontSize * 0.6);
-            ctx.fillText(hText, textCenterX, boxCenterY + fontSize * 0.6);
+            ctx.fillText(wText, centerX, centerY - fontSize * 0.6);
+            ctx.fillText(hText, centerX, centerY + fontSize * 0.6);
           } else if (wText || hText) {
-            ctx.fillText(wText || hText, textCenterX, boxCenterY);
+            ctx.fillText(wText || hText, centerX, centerY);
           }
         });
       }
