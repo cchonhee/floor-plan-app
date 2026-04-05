@@ -75,13 +75,12 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // AI 명령어를 강력하게 수정: "붉은색 실선 공간만 찾을 것"
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 하단이나 우측의 표에서 면적(㎡) 정보를 찾아 축척의 기준으로 삼아.\n\n**2단계 (가장 중요!):** 도면에서 **반드시 "굵은 붉은색 실선"으로 테두리가 쳐진 공간들만** 찾아내. 계단실, 일반 복도 등 붉은색 테두리가 없는 공간이나 점선으로 된 구역은 계산 대상에서 완전히 제외하고 철저히 무시해.\n\n**3단계 (위치 지정 규칙):** 찾아낸 '붉은색 테두리 공간' 각각에 대해 가로(W), 세로(H) 길이를 계산하고, 수치를 적어넣을 X, Y 좌표를 **"해당 붉은색 공간 내부의 완전한 정중앙 빈 곳"**으로 지정해. 방 한가운데에 텍스트 상자를 예쁘게 놓기 위함이야.`,
+              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계 (가장 중요):** 도면 전체를 하나의 큰 방으로 묶지 마! 도면에 선으로 나뉘어 있고 글씨로 용도가 적혀 있는 **모든 개별 방과 공간(예: 창고, 화장실, 탈의실, 세면실, 숙직실, 시설관리실, 매점, 탁구장 등)을 하나도 빠짐없이 모두** 찾아내.\n\n**3단계:** 식별된 '각각의 개별 방마다' 따로따로 가로(W)와 세로(H) 길이를 계산해. 만약 방이 8개라면 결과 데이터도 8개가 나와야 해.\n\n**[위치 지정 규칙]:** X, Y 좌표는 선 위가 아니라 **"해당 개별 방 내부 빈 공간의 정중앙"** 백분율(0~100) 좌표여야 해.`,
             },
             {
               inlineData: {
@@ -95,7 +94,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 화면에서 '굵은 붉은색 실선'으로 표시된 타겟 구역들만 엄격하게 식별하여 가로/세로 길이를 계산하고, 그 구역 내부의 정중앙 좌표(Center X, Y)를 추출해. 붉은색 테두리가 없는 영역의 정보는 절대 응답에 포함하지 마. 응답은 반드시 JSON(JavaScript Object Notation, 자바스크립트 객체 표기법) 형식이어야 해.",
+            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 굵은 테두리에 속지 말고, 내부의 얇은 선들로 구분된 '개별 방 단위'로 쪼개서 분석해. 반드시 JSON(JavaScript Object Notation, 자바스크립트 객체 표기법 - 데이터를 주고받는 표준 양식) 형식으로, 도면에 있는 모든 방의 개수만큼 여러 개의 데이터를 배열에 담아 응답해.",
           },
         ],
       },
@@ -109,6 +108,11 @@ export default function App() {
               items: {
                 type: "OBJECT",
                 properties: {
+                  roomName: {
+                    type: "STRING",
+                    description:
+                      "인식된 방의 이름 (예: 창고, 화장실 - 이 정보를 바탕으로 구역 분리)",
+                  },
                   widthText: {
                     type: "STRING",
                     description: "가로 길이 (예: W: 3000mm)",
@@ -119,16 +123,14 @@ export default function App() {
                   },
                   x: {
                     type: "NUMBER",
-                    description:
-                      "붉은색 공간 내부 정중앙 X 좌표 백분율 (0-100)",
+                    description: "해당 방 내부 정중앙 X 좌표 백분율 (0-100)",
                   },
                   y: {
                     type: "NUMBER",
-                    description:
-                      "붉은색 공간 내부 정중앙 Y 좌표 백분율 (0-100)",
+                    description: "해당 방 내부 정중앙 Y 좌표 백분율 (0-100)",
                   },
                 },
-                required: ["widthText", "heightText", "x", "y"],
+                required: ["roomName", "widthText", "heightText", "x", "y"],
               },
             },
           },
@@ -189,7 +191,7 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        const fontSize = Math.max(12, Math.floor(canvas.width * 0.012));
+        const fontSize = Math.max(10, Math.floor(canvas.width * 0.01));
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -210,7 +212,8 @@ export default function App() {
           const boxWidth = maxWidth + paddingX * 2;
           const boxHeight = wText && hText ? fontSize * 2.5 : fontSize * 1.5;
 
-          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          // 배경 박스 (말풍선) 그리기
+          ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
           ctx.beginPath();
           if (ctx.roundRect) {
             ctx.roundRect(
@@ -230,10 +233,11 @@ export default function App() {
           }
           ctx.fill();
 
-          ctx.lineWidth = 1.5;
+          ctx.lineWidth = 1;
           ctx.strokeStyle = "#4f46e5";
           ctx.stroke();
 
+          // 글씨 그리기
           ctx.fillStyle = "#1e3a8a";
 
           if (wText && hText) {
@@ -259,8 +263,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 flex justify-center items-start">
-      <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
-        <div className="bg-linear-to-r from-indigo-600 to-blue-500 p-6 text-white">
+      <div className="w-full max-w-lg bg-white rounded-[2rem] shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
+        {/* 상단 헤더: bg-gradient-to-r 로 원래 색상 복구 */}
+        <div className="bg-gradient-to-r from-indigo-600 to-blue-500 p-6 text-white">
           <h1 className="text-2xl font-black flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-indigo-200" />
             도면 수치 자동 입력기
@@ -294,6 +299,7 @@ export default function App() {
             </label>
           </div>
 
+          {/* 에러 메시지 */}
           {error && (
             <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm flex items-start gap-3 border border-red-100">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -301,13 +307,14 @@ export default function App() {
             </div>
           )}
 
+          {/* 계산 버튼: bg-gradient-to-r 로 원래 색상 복구 */}
           <button
             onClick={analyzeImage}
             disabled={!imageSrc || isProcessing}
             className={`w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-all duration-300 shadow-lg ${
               !imageSrc || isProcessing
                 ? "bg-slate-300 shadow-none cursor-not-allowed text-slate-500"
-                : "bg-linear-to-r from-indigo-600 to-blue-500 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
+                : "bg-gradient-to-r from-indigo-600 to-blue-500 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
             }`}
           >
             {isProcessing ? (
