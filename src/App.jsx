@@ -75,12 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
+    // [핵심 변경] AI에게 복잡한 계산을 빼고 오직 "글자 위치 찾기(OCR)"만 시킵니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계:** 도면에 글씨로 적혀 있는 모든 개별 방 이름(창고, 화장실, 탈의실, 세면실, 숙직실, 시설관리실, 매점, 탁구장 등)을 빠짐없이 찾아내고 각각의 길이를 계산해.\n\n**3단계 (가장 중요 - 방 이름 바로 아래 배치):** 수치를 표시할 X, Y 좌표(0~100 백분율)는 반드시 도면에 인쇄된 **"해당 방 이름 글씨의 바로 아래"**로 지정해!\n- X좌표: 방 이름 글씨의 가로 중앙과 똑같이 맞춰.\n- Y좌표: 방 이름 글씨의 세로 위치보다 살짝 아래(약 3~5% 정도 밑)로 설정해.\n절대 벽면이나 모서리가 아니라, 글씨와 수치 박스가 위아래로 예쁜 한 세트(짝꿍)가 되도록 만들어 줘.`,
+              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 모든 개별 방 이름(창고, 화장실, 탈의실, 세면실, 숙직실, 시설관리실, 매점, 탁구장 등)을 빠짐없이 찾아내고 각각의 길이를 계산해.\n\n**2단계 (가장 중요 - 글자 위치 추적):** 수치를 표시할 X, Y 좌표는 선이나 빈 공간이 절대 아니야! 도면에 적혀 있는 **"방 이름 글씨(텍스트) 자체의 정중앙 좌표"**를 OCR(문자 인식)로 스캔해서 백분율(0~100)로 도출해. 위치를 위아래로 이동시키지 말고 오직 글씨가 있는 위치만 정확히 찾아내.`,
             },
             {
               inlineData: {
@@ -94,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면 분석 전문가야. 수치 박스의 x, y 좌표는 무조건 도면에 인쇄된 '방 이름 텍스트'를 시각적으로 찾아낸 뒤, 그 텍스트의 '바로 하단(아래쪽)'을 타겟팅해야 해. 방 이름표와 수치표가 하나의 그룹처럼 보이게 하는 것이 핵심 원칙이야. JSON 양식으로 출력해.",
+            text: "너는 도면의 텍스트(글자) 위치를 찾아내는 OCR 전문가야. 방의 테두리나 빈 공간은 완전히 무시하고, 도면에 인쇄된 방 이름 글씨(예: '매점')의 한가운데(Center) X, Y 좌표만 정확하게 추출해.",
           },
         ],
       },
@@ -122,12 +123,11 @@ export default function App() {
                   },
                   x: {
                     type: "NUMBER",
-                    description:
-                      "방 이름 텍스트의 가로 중앙과 일치하는 X 좌표 (0-100)",
+                    description: "방 이름 '글씨' 자체의 정중앙 X 좌표 (0-100)",
                   },
                   y: {
                     type: "NUMBER",
-                    description: "방 이름 텍스트의 바로 아래쪽 Y 좌표 (0-100)",
+                    description: "방 이름 '글씨' 자체의 정중앙 Y 좌표 (0-100)",
                   },
                 },
                 required: ["roomName", "widthText", "heightText", "x", "y"],
@@ -197,8 +197,9 @@ export default function App() {
         ctx.textBaseline = "middle";
 
         dimensions.forEach((dim) => {
-          const xPos = (dim.x / 100) * canvas.width;
-          const yPos = (dim.y / 100) * canvas.height;
+          // AI가 찾아낸 '글자'의 중앙 좌표
+          const textCenterX = (dim.x / 100) * canvas.width;
+          const textCenterY = (dim.y / 100) * canvas.height;
 
           const wText = dim.widthText || "";
           const hText = dim.heightText || "";
@@ -211,20 +212,26 @@ export default function App() {
           const boxWidth = maxWidth + paddingX * 2;
           const boxHeight = wText && hText ? fontSize * 2.3 : fontSize * 1.3;
 
+          // [핵심 로직] 우리 코드가 글자 위치(textCenterY)를 기준으로 박스를 그만큼 밑으로 내려서 그립니다.
+          // 방 이름표 글씨를 가리지 않도록, 글자 크기(fontSize)의 약 1.5배만큼 아래로 밀어냅니다.
+          const yOffset = fontSize * 1.5;
+          const boxCenterY = textCenterY + yOffset + boxHeight / 2;
+
+          // 말풍선 박스 그리기
           ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
           ctx.beginPath();
           if (ctx.roundRect) {
             ctx.roundRect(
-              xPos - boxWidth / 2,
-              yPos - boxHeight / 2,
+              textCenterX - boxWidth / 2,
+              boxCenterY - boxHeight / 2,
               boxWidth,
               boxHeight,
               4,
             );
           } else {
             ctx.rect(
-              xPos - boxWidth / 2,
-              yPos - boxHeight / 2,
+              textCenterX - boxWidth / 2,
+              boxCenterY - boxHeight / 2,
               boxWidth,
               boxHeight,
             );
@@ -235,13 +242,13 @@ export default function App() {
           ctx.strokeStyle = "#4f46e5";
           ctx.stroke();
 
+          // 수치 글씨 그리기 (수정된 boxCenterY 기준)
           ctx.fillStyle = "#1e3a8a";
-
           if (wText && hText) {
-            ctx.fillText(wText, xPos, yPos - fontSize * 0.6);
-            ctx.fillText(hText, xPos, yPos + fontSize * 0.6);
+            ctx.fillText(wText, textCenterX, boxCenterY - fontSize * 0.6);
+            ctx.fillText(hText, textCenterX, boxCenterY + fontSize * 0.6);
           } else if (wText || hText) {
-            ctx.fillText(wText || hText, xPos, yPos);
+            ctx.fillText(wText || hText, textCenterX, boxCenterY);
           }
         });
       }
@@ -260,8 +267,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 flex justify-center items-start">
+      {/* 1. rounded-[2rem]을 표준 문법인 rounded-3xl로 변경 */}
       <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
-        <div className="bg-gradient-to-r from-indigo-600 to-blue-500 p-6 text-white">
+        {/* 2. 에러가 나던 그라데이션 대신, 깔끔하고 세련된 단색(인디고) 배경으로 변경 */}
+        <div className="bg-indigo-600 p-6 text-white">
           <h1 className="text-2xl font-black flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-indigo-200" />
             도면 수치 자동 입력기
@@ -308,7 +317,8 @@ export default function App() {
             className={`w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-all duration-300 shadow-lg ${
               !imageSrc || isProcessing
                 ? "bg-slate-300 shadow-none cursor-not-allowed text-slate-500"
-                : "bg-gradient-to-r from-indigo-600 to-blue-500 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
+                : // 3. 버튼 역시 단색(인디고)으로 통일하고, 마우스를 올렸을 때 더 진해지도록 변경
+                  "bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
             }`}
           >
             {isProcessing ? (
@@ -325,7 +335,8 @@ export default function App() {
             <label className="font-bold text-slate-700 text-lg">
               결과 미리보기
             </label>
-            <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center flex-1 min-h-[250px]">
+            {/* 4. min-h-[250px]를 표준 문법인 min-h-64(256px)로 변경 */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center flex-1 min-h-64">
               {!imageSrc ? (
                 <div className="text-slate-400 flex flex-col items-center gap-3">
                   <ImageIcon className="w-10 h-10 opacity-50" />
