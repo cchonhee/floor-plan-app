@@ -80,7 +80,7 @@ export default function App() {
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계 (가장 중요):** 도면 전체를 하나의 큰 방으로 묶지 마! 도면에 선으로 나뉘어 있고 글씨로 용도가 적혀 있는 **모든 개별 방과 공간(예: 창고, 화장실, 탈의실, 세면실, 숙직실, 시설관리실, 매점, 탁구장 등)을 하나도 빠짐없이 모두** 찾아내.\n\n**3단계:** 식별된 '각각의 개별 방마다' 따로따로 가로(W)와 세로(H) 길이를 계산해. 만약 방이 8개라면 결과 데이터도 8개가 나와야 해.\n\n**[위치 지정 규칙]:** X, Y 좌표는 선 위가 아니라 **"해당 개별 방 내부 빈 공간의 정중앙"** 백분율(0~100) 좌표여야 해.`,
+              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계:** 도면에 글씨로 적혀 있는 모든 개별 방 이름(창고, 화장실, 탈의실, 세면실, 숙직실, 시설관리실, 매점, 탁구장 등)을 빠짐없이 찾아내고 각각의 길이를 계산해.\n\n**3단계 (가장 중요 - 방 이름 바로 아래 배치):** 수치를 표시할 X, Y 좌표(0~100 백분율)는 반드시 도면에 인쇄된 **"해당 방 이름 글씨의 바로 아래"**로 지정해!\n- X좌표: 방 이름 글씨의 가로 중앙과 똑같이 맞춰.\n- Y좌표: 방 이름 글씨의 세로 위치보다 살짝 아래(약 3~5% 정도 밑)로 설정해.\n절대 벽면이나 모서리가 아니라, 글씨와 수치 박스가 위아래로 예쁜 한 세트(짝꿍)가 되도록 만들어 줘.`,
             },
             {
               inlineData: {
@@ -94,7 +94,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면을 분석하는 전문가 시스템이야. 굵은 테두리에 속지 말고, 내부의 얇은 선들로 구분된 '개별 방 단위'로 쪼개서 분석해. 반드시 JSON(JavaScript Object Notation, 자바스크립트 객체 표기법 - 데이터를 주고받는 표준 양식) 형식으로, 도면에 있는 모든 방의 개수만큼 여러 개의 데이터를 배열에 담아 응답해.",
+            text: "너는 건축 도면 분석 전문가야. 수치 박스의 x, y 좌표는 무조건 도면에 인쇄된 '방 이름 텍스트'를 시각적으로 찾아낸 뒤, 그 텍스트의 '바로 하단(아래쪽)'을 타겟팅해야 해. 방 이름표와 수치표가 하나의 그룹처럼 보이게 하는 것이 핵심 원칙이야. JSON 양식으로 출력해.",
           },
         ],
       },
@@ -110,8 +110,7 @@ export default function App() {
                 properties: {
                   roomName: {
                     type: "STRING",
-                    description:
-                      "인식된 방의 이름 (예: 창고, 화장실 - 이 정보를 바탕으로 구역 분리)",
+                    description: "인식된 방의 이름 (예: 시설관리실)",
                   },
                   widthText: {
                     type: "STRING",
@@ -123,11 +122,12 @@ export default function App() {
                   },
                   x: {
                     type: "NUMBER",
-                    description: "해당 방 내부 정중앙 X 좌표 백분율 (0-100)",
+                    description:
+                      "방 이름 텍스트의 가로 중앙과 일치하는 X 좌표 (0-100)",
                   },
                   y: {
                     type: "NUMBER",
-                    description: "해당 방 내부 정중앙 Y 좌표 백분율 (0-100)",
+                    description: "방 이름 텍스트의 바로 아래쪽 Y 좌표 (0-100)",
                   },
                 },
                 required: ["roomName", "widthText", "heightText", "x", "y"],
@@ -191,7 +191,7 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        const fontSize = Math.max(10, Math.floor(canvas.width * 0.01));
+        const fontSize = Math.max(9, Math.floor(canvas.width * 0.0085));
         ctx.font = `bold ${fontSize}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -207,13 +207,11 @@ export default function App() {
           const hWidth = ctx.measureText(hText).width;
           const maxWidth = Math.max(wWidth, hWidth);
 
-          const paddingX = fontSize * 0.8;
-          const paddingY = fontSize * 0.6;
+          const paddingX = fontSize * 0.6;
           const boxWidth = maxWidth + paddingX * 2;
-          const boxHeight = wText && hText ? fontSize * 2.5 : fontSize * 1.5;
+          const boxHeight = wText && hText ? fontSize * 2.3 : fontSize * 1.3;
 
-          // 배경 박스 (말풍선) 그리기
-          ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+          ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
           ctx.beginPath();
           if (ctx.roundRect) {
             ctx.roundRect(
@@ -221,7 +219,7 @@ export default function App() {
               yPos - boxHeight / 2,
               boxWidth,
               boxHeight,
-              6,
+              4,
             );
           } else {
             ctx.rect(
@@ -237,7 +235,6 @@ export default function App() {
           ctx.strokeStyle = "#4f46e5";
           ctx.stroke();
 
-          // 글씨 그리기
           ctx.fillStyle = "#1e3a8a";
 
           if (wText && hText) {
@@ -263,8 +260,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 flex justify-center items-start">
-      <div className="w-full max-w-lg bg-white rounded-[2rem] shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
-        {/* 상단 헤더: bg-gradient-to-r 로 원래 색상 복구 */}
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
         <div className="bg-gradient-to-r from-indigo-600 to-blue-500 p-6 text-white">
           <h1 className="text-2xl font-black flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-indigo-200" />
@@ -299,7 +295,6 @@ export default function App() {
             </label>
           </div>
 
-          {/* 에러 메시지 */}
           {error && (
             <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm flex items-start gap-3 border border-red-100">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -307,7 +302,6 @@ export default function App() {
             </div>
           )}
 
-          {/* 계산 버튼: bg-gradient-to-r 로 원래 색상 복구 */}
           <button
             onClick={analyzeImage}
             disabled={!imageSrc || isProcessing}
