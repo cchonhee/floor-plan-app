@@ -52,9 +52,9 @@ export default function App() {
     setIsProcessing(true);
     setError("");
 
-    // API 키와 모델 설정
+    // API 키 설정 및 최신 AI 모델(2.5버전) 이름으로 변경 완료!
     let apiKey = "";
-    let modelName = "gemini-2.5-flash-preview-09-2025";
+    const modelName = "gemini-2.5-flash";
 
     try {
       if (
@@ -63,14 +63,11 @@ export default function App() {
         import.meta.env.VITE_GEMINI_API_KEY
       ) {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        // 개인 API 키가 있으면 403 에러 방지를 위해 범용 모델로 강제 전환
-        modelName = "gemini-1.5-flash";
       }
     } catch (e) {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    // [디버깅용 추가 코드] API 키가 아예 없는 경우 403 에러가 나기 전에 먼저 알려줍니다.
     if (!apiKey || apiKey.trim() === "") {
       setError(
         `🚨 오류: API 키가 설정되지 않았습니다. Vercel 환경 변수(VITE_GEMINI_API_KEY)를 다시 확인해 주세요.`,
@@ -152,7 +149,6 @@ export default function App() {
         });
 
         if (!response.ok) {
-          // [디버깅용 추가 코드] 구글 서버가 보내는 정확한 에러 메시지를 읽어와서 화면에 뿌려줍니다.
           const errorData = await response.json().catch(() => ({}));
           let detailedError = "";
 
@@ -160,6 +156,8 @@ export default function App() {
             detailedError = ` (${errorData.error.message})`;
           } else if (response.status === 403) {
             detailedError = ` (이유: Vercel에 등록한 API 키가 유효하지 않거나, 사용할 권한이 없습니다.)`;
+          } else if (response.status === 404) {
+            detailedError = ` (이유: 요청한 AI 모델을 찾을 수 없습니다. 코드를 최신 버전으로 업데이트해야 합니다.)`;
           }
 
           throw new Error(`상태 코드: ${response.status}${detailedError}`);
@@ -249,8 +247,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 flex justify-center items-start">
-      <div className="w-full max-w-lg bg-white rounded-[2rem] shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
-        <div className="bg-gradient-to-r from-indigo-600 to-blue-500 p-6 text-white">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
+        <div className="bg-linear-to-r from-indigo-600 to-blue-500 p-6 text-white">
           <h1 className="text-2xl font-black flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-indigo-200" />
             도면 수치 자동 입력기
@@ -297,7 +295,7 @@ export default function App() {
             className={`w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-all duration-300 shadow-lg ${
               !imageSrc || isProcessing
                 ? "bg-slate-300 shadow-none cursor-not-allowed text-slate-500"
-                : "bg-gradient-to-r from-indigo-600 to-blue-500 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
+                : "bg-linear-to-r from-indigo-600 to-blue-500 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
             }`}
           >
             {isProcessing ? (
