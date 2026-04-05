@@ -75,12 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
+    // [핵심 변경] W, H 약자 추가 및 '시각적 비율(가로가 긴지 세로가 긴지)'을 강제로 확인하도록 명령했습니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야.\n\n1단계: 도면의 축척을 파악해.\n\n2단계: 도면에 적힌 모든 '방 이름(용도)'을 찾아내고, 각 방의 가로(W), 세로(H) 길이를 계산해.\n\n3단계 (단위 변환): 계산된 길이는 mm가 아닌 **미터(m) 단위로 소수점 첫째 자리까지** 변환해 (예: 3600mm -> 3.6m). W, H 접두사 없이 숫자와 m만 남겨!\n\n4단계 (위치 및 중복 방지): 동일한 방은 1번만 출력해. X, Y 좌표(0~100) 규칙:\n- **공간이 좁은 방들 (창고, 화장실, 탈의실, 세면실, 숙직실 등):** 도면의 **가장 왼쪽 바깥 여백 (X좌표 약 10~15% 부근)**으로 X좌표를 확 빼버려. Y좌표는 해당 방의 높이에 맞춰.\n- **공간이 넓은 방들 (매점, 시설관리실, 탁구장 등):** 도면에 적힌 방 이름 글씨의 가로 중앙(X)에 맞추고, Y좌표는 글씨 바로 위쪽에 배치해.`,
+              text: `다음은 건축 평면도 이미지야.\n\n1단계: 도면에 적힌 모든 '방 이름(용도)' 글씨를 찾아내.\n\n2단계 (비율 및 치수 계산 - 매우 중요!): 각 방의 가로(W), 세로(H) 길이를 계산해. 이때 **반드시 시각적으로 방의 형태(가로가 긴 직사각형인지, 세로가 긴 직사각형인지)를 확인해!** 예를 들어 '세면실'처럼 눈으로 보기에 가로가 확연히 긴데 W와 H를 똑같이 계산하면 완전히 틀린 거야. 시각적 비율에 맞게 정확히 계산해.\n\n3단계 (단위 및 포맷): 계산된 길이는 미터(m) 단위로 소수점 첫째 자리까지 변환하고, 반드시 앞에 약자를 붙여서 **'W: 3.6m', 'H: 2.4m'** 형식으로 출력해.\n\n4단계 (위치): 수치를 표시할 X, Y 좌표(0~100)는 복잡하게 생각하지 말고, 도면에 인쇄된 **"해당 방 이름 글씨의 한가운데(Center)"** 좌표로 통일해서 찍어. (동일한 방은 무조건 1개만 출력해!)`,
             },
             {
               inlineData: {
@@ -94,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 도면 치수 계산 및 UI 배치 전문가야. 치수는 무조건 '3.6m' 처럼 미터 단위로만 출력해. 좁은 방은 왼쪽 바깥으로 X좌표를 빼고, 넓은 방은 방 이름 위에 배치해. JSON 형식으로만 응답해.",
+            text: "너는 도면 치수 계산 전문가야. 시각적 가로/세로 비율을 엄격히 따져서 계산해. 형식은 반드시 'W: 0.0m', 'H: 0.0m'로 출력하고, 좌표는 방 이름 텍스트의 중앙으로 잡아. JSON 형식으로만 응답해.",
           },
         ],
       },
@@ -110,18 +111,24 @@ export default function App() {
                 properties: {
                   roomName: {
                     type: "STRING",
-                    description: "방 이름 (예: 화장실)",
+                    description: "방 이름 (예: 세면실)",
                   },
                   widthText: {
                     type: "STRING",
-                    description: "가로 길이 (예: 2.4m)",
+                    description: "가로 길이 (예: W: 3.6m)",
                   },
                   heightText: {
                     type: "STRING",
-                    description: "세로 길이 (예: 2.4m)",
+                    description: "세로 길이 (예: H: 2.4m)",
                   },
-                  x: { type: "NUMBER", description: "X 좌표 백분율" },
-                  y: { type: "NUMBER", description: "Y 좌표 백분율" },
+                  x: {
+                    type: "NUMBER",
+                    description: "방 이름 '글씨'의 정중앙 X 좌표 백분율",
+                  },
+                  y: {
+                    type: "NUMBER",
+                    description: "방 이름 '글씨'의 정중앙 Y 좌표 백분율",
+                  },
                 },
                 required: ["roomName", "widthText", "heightText", "x", "y"],
               },
@@ -187,7 +194,6 @@ export default function App() {
     }
   };
 
-  // [핵심 변경] 캔버스에 그릴 때 상자 안에 '방 이름'을 명찰처럼 달아줍니다!
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -201,46 +207,49 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        // 글씨 크기를 약간 키워서 잘 보이게 설정
-        const fontSize = Math.max(11, Math.floor(canvas.width * 0.01));
+        const fontSize = Math.max(10, Math.floor(canvas.width * 0.009));
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
 
         dimensions.forEach((dim) => {
-          const centerX = (dim.x / 100) * canvas.width;
-          const centerY = (dim.y / 100) * canvas.height;
+          // AI가 찾은 '방 이름 글씨'의 중앙 좌표
+          const textCenterX = (dim.x / 100) * canvas.width;
+          const textCenterY = (dim.y / 100) * canvas.height;
 
           const wText = dim.widthText || "";
           const hText = dim.heightText || "";
-          const rName = dim.roomName || "방"; // 방 이름 가져오기
 
-          // 방 이름과 수치 중 가장 긴 텍스트를 기준으로 상자 너비 계산
-          ctx.font = `900 ${fontSize * 1.05}px sans-serif`;
-          const rWidth = ctx.measureText(rName).width;
-          ctx.font = `bold ${fontSize * 0.95}px sans-serif`;
+          // W, H 텍스트 너비 계산
           const wWidth = ctx.measureText(wText).width;
           const hWidth = ctx.measureText(hText).width;
+          const maxWidth = Math.max(wWidth, hWidth);
 
-          const maxWidth = Math.max(wWidth, hWidth, rWidth);
-          const paddingX = fontSize * 1.0;
+          const paddingX = fontSize * 0.8;
           const boxWidth = maxWidth + paddingX * 2;
+          // 텍스트 2줄(W, H)만 들어가도록 박스 높이 축소
+          const boxHeight = wText && hText ? fontSize * 2.6 : fontSize * 1.5;
 
-          // 방 이름 1줄 + 수치 2줄 = 총 3줄이 들어갈 넉넉한 높이
-          const boxHeight = fontSize * 3.8;
+          // [핵심] 상자를 '방 이름 글씨' 바로 아래(약 1.5배 높이만큼 밑)에 배치합니다.
+          // 방 이름표를 상자 안에 넣지 않으므로 더욱 깔끔합니다.
+          const yOffset = fontSize * 1.8;
+          const boxCenterY = textCenterY + yOffset;
 
-          // 1. 하얀색 말풍선 상자 그리기
+          // 파란색 테두리 하얀 상자 그리기
           ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
           ctx.beginPath();
           if (ctx.roundRect) {
             ctx.roundRect(
-              centerX - boxWidth / 2,
-              centerY - boxHeight / 2,
+              textCenterX - boxWidth / 2,
+              boxCenterY - boxHeight / 2,
               boxWidth,
               boxHeight,
-              6,
+              4,
             );
           } else {
             ctx.rect(
-              centerX - boxWidth / 2,
-              centerY - boxHeight / 2,
+              textCenterX - boxWidth / 2,
+              boxCenterY - boxHeight / 2,
               boxWidth,
               boxHeight,
             );
@@ -251,28 +260,14 @@ export default function App() {
           ctx.strokeStyle = "#2563eb";
           ctx.stroke();
 
-          // 2. 방 이름과 수치를 구분하는 얇은 가로선 긋기 (디자인 포인트!)
-          ctx.beginPath();
-          ctx.moveTo(centerX - boxWidth / 2 + 6, centerY - fontSize * 0.3);
-          ctx.lineTo(centerX + boxWidth / 2 - 6, centerY - fontSize * 0.3);
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = "rgba(37, 99, 235, 0.3)"; // 연한 파란색 선
-          ctx.stroke();
-
-          // 3. 텍스트 입력 (방 이름은 위쪽에 진하게, 수치는 아래쪽에)
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-
-          // 방 이름 (명찰)
-          ctx.fillStyle = "#1e3a8a"; // 아주 진한 남색
-          ctx.font = `900 ${fontSize * 1.05}px sans-serif`;
-          ctx.fillText(rName, centerX, centerY - fontSize * 1.1);
-
-          // 수치 데이터
-          ctx.fillStyle = "#2563eb"; // 쨍한 파란색
-          ctx.font = `bold ${fontSize * 0.95}px sans-serif`;
-          ctx.fillText(wText, centerX, centerY + fontSize * 0.4);
-          ctx.fillText(hText, centerX, centerY + fontSize * 1.4);
+          // W, H 수치 텍스트 그리기
+          ctx.fillStyle = "#2563eb";
+          if (wText && hText) {
+            ctx.fillText(wText, textCenterX, boxCenterY - fontSize * 0.6);
+            ctx.fillText(hText, textCenterX, boxCenterY + fontSize * 0.6);
+          } else if (wText || hText) {
+            ctx.fillText(wText || hText, textCenterX, boxCenterY);
+          }
         });
       }
     };
