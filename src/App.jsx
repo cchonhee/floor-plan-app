@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [핵심 변경] 방의 수치를 계산하되, 출력 좌표는 강제로 '글자'의 중앙을 찍도록 속성명을 명확히 지정했습니다.
+    // AI는 가장 잘하는 "방의 기하학적 정중앙 찾기" 와 "수치 계산" 만 완벽하게 수행하도록 원복했습니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. \n\n**1단계 (스케일 파악):** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계 (치수 계산):** 도면에 글씨로 적혀 있는 각 방(창고, 화장실, 탈의실 등)을 감싸고 있는 사각형의 가로(W)와 세로(H) 길이를 계산해. (절대 N/A를 쓰지 말고 숫자로 유추해)\n\n**3단계 (가운데 정렬을 위한 글자 위치 찾기 - 가장 중요):** 방의 수치를 그릴 기준점을 잡아야 해. 도면에 인쇄된 **"방 이름 글자(예: '시설관리실')" 자체의 정중앙 X, Y 좌표**를 백분율(0~100)로 정확히 찾아줘. 방의 중심이나 벽면이 아니라, 오직 '글자'의 중심이어야 우리가 그 글자 바로 아래에 수치를 가운데 정렬할 수 있어.`,
+              text: `다음은 건축 평면도 이미지야. \n\n**1단계:** 도면 내의 면적이나 축척 정보를 찾아 기준을 설정해.\n\n**2단계 (계산 필수):** 도면에 선으로 나뉘어 있는 모든 개별 방(창고, 화장실, 탈의실, 세면실, 숙직실, 시설관리실, 매점, 탁구장 등)을 빠짐없이 찾아내고, 각 방의 가로(W)와 세로(H) 길이를 **무조건 숫자로 계산해! 절대 계산을 생략하거나 N/A로 두지 마.**\n\n**3단계 (좌표 추출):** 수치를 표시할 X, Y 좌표(0~100 백분율)는 각 방의 외곽선을 기준으로 한 **"빈 공간의 완벽한 50% 정중앙"** 좌표로 추출해.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면 AI야. 각 방의 가로/세로 길이를 계산하고, 좌표는 무조건 '방 이름 텍스트'의 한가운데(Center)로 지정해. 속성명 textCenterX, textCenterY에 글자의 좌표를 넣어.",
+            text: "너는 건축 도면 치수 계산 AI야. 각 방의 가로/세로 길이를 반드시 계산하고, x와 y 좌표는 방 테두리를 기준으로 한 '기하학적 정중앙(50%)' 백분율로만 도출해. 글씨 위치를 찾으려 하지 말고 무조건 방의 중앙을 찾아.",
           },
         ],
       },
@@ -121,24 +121,16 @@ export default function App() {
                     type: "STRING",
                     description: "계산된 세로 길이 (예: H: 4000mm)",
                   },
-                  textCenterX: {
+                  x: {
                     type: "NUMBER",
-                    description:
-                      "방 이름 '글자' 자체의 정중앙 X 좌표 (0-100). 절대 방 모서리가 아님.",
+                    description: "방 전체의 정확한 50% 정중앙 X 좌표 (0-100)",
                   },
-                  textCenterY: {
+                  y: {
                     type: "NUMBER",
-                    description:
-                      "방 이름 '글자' 자체의 정중앙 Y 좌표 (0-100). 절대 방 모서리가 아님.",
+                    description: "방 전체의 정확한 50% 정중앙 Y 좌표 (0-100)",
                   },
                 },
-                required: [
-                  "roomName",
-                  "widthText",
-                  "heightText",
-                  "textCenterX",
-                  "textCenterY",
-                ],
+                required: ["roomName", "widthText", "heightText", "x", "y"],
               },
             },
           },
@@ -167,7 +159,7 @@ export default function App() {
 
         if (responseText) {
           const parsedResult = JSON.parse(responseText);
-          // N/A 값이 실수로 넘어와도 그리지 않도록 방어하는 코드를 추가했습니다.
+          // N/A 등 잘못된 계산 결과가 넘어오면 화면에 그리지 않도록 필터링
           const validDimensions = (parsedResult.dimensions || []).filter(
             (dim) => dim.widthText && !dim.widthText.includes("N/A"),
           );
@@ -209,14 +201,9 @@ export default function App() {
         ctx.textBaseline = "middle";
 
         dimensions.forEach((dim) => {
-          // AI가 찾은 '글자'의 중앙 좌표 (새로운 속성명 textCenterX, textCenterY 적용)
-          const xValue =
-            dim.textCenterX !== undefined ? dim.textCenterX : dim.x;
-          const yValue =
-            dim.textCenterY !== undefined ? dim.textCenterY : dim.y;
-
-          const textCenterX = (xValue / 100) * canvas.width;
-          const textCenterY = (yValue / 100) * canvas.height;
+          // AI가 찾은 '방의 정중앙' 좌표
+          const centerX = (dim.x / 100) * canvas.width;
+          const centerY = (dim.y / 100) * canvas.height;
 
           const wText = dim.widthText || "";
           const hText = dim.heightText || "";
@@ -229,15 +216,17 @@ export default function App() {
           const boxWidth = maxWidth + paddingX * 2;
           const boxHeight = wText && hText ? fontSize * 2.3 : fontSize * 1.3;
 
-          const yOffset = fontSize * 1.5;
-          const boxCenterY = textCenterY + yOffset + boxHeight / 2;
+          // [핵심 로직] 우리 코드가 방의 정중앙(보통 글씨가 있는 곳)에서
+          // 박스를 글씨 크기의 약 1.8배만큼 강제로 아래로 내려서 그립니다!
+          const yOffset = fontSize * 1.8;
+          const boxCenterY = centerY + yOffset;
 
           // 말풍선 박스 그리기
           ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
           ctx.beginPath();
           if (ctx.roundRect) {
             ctx.roundRect(
-              textCenterX - boxWidth / 2,
+              centerX - boxWidth / 2,
               boxCenterY - boxHeight / 2,
               boxWidth,
               boxHeight,
@@ -245,7 +234,7 @@ export default function App() {
             );
           } else {
             ctx.rect(
-              textCenterX - boxWidth / 2,
+              centerX - boxWidth / 2,
               boxCenterY - boxHeight / 2,
               boxWidth,
               boxHeight,
@@ -260,10 +249,10 @@ export default function App() {
           // 수치 글씨 그리기
           ctx.fillStyle = "#1e3a8a";
           if (wText && hText) {
-            ctx.fillText(wText, textCenterX, boxCenterY - fontSize * 0.6);
-            ctx.fillText(hText, textCenterX, boxCenterY + fontSize * 0.6);
+            ctx.fillText(wText, centerX, boxCenterY - fontSize * 0.6);
+            ctx.fillText(hText, centerX, boxCenterY + fontSize * 0.6);
           } else if (wText || hText) {
-            ctx.fillText(wText || hText, textCenterX, boxCenterY);
+            ctx.fillText(wText || hText, centerX, boxCenterY);
           }
         });
       }
@@ -281,8 +270,8 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 font-sans p-4 sm:p-6 flex justify-center items-start">
-      <div className="w-full max-w-lg bg-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col min-h-[90vh] border border-slate-700">
+    <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 flex justify-center items-start">
+      <div className="w-full max-w-lg bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col min-h-[90vh]">
         <div className="bg-linear-to-r from-indigo-600 to-blue-500 p-6 text-white">
           <h1 className="text-2xl font-black flex items-center gap-2">
             <Sparkles className="w-7 h-7 text-indigo-200" />
@@ -295,21 +284,21 @@ export default function App() {
 
         <div className="p-6 flex flex-col gap-6 flex-1">
           <div className="flex flex-col gap-3">
-            <label className="font-bold text-slate-200 text-lg">
+            <label className="font-bold text-slate-700 text-lg">
               1. 평면도 업로드
             </label>
-            <label className="group border-2 border-dashed border-slate-600 bg-slate-700/30 hover:bg-slate-700/60 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all duration-300">
+            <label className="group border-2 border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all duration-300">
               <input
                 type="file"
                 accept="image/*"
                 onChange={handleImageUpload}
                 className="hidden"
               />
-              <div className="flex gap-4 mb-3 text-indigo-400 group-hover:text-indigo-300 transition-colors duration-300">
+              <div className="flex gap-4 mb-3 text-indigo-400 group-hover:text-indigo-600 transition-colors duration-300">
                 <Camera className="w-10 h-10" />
                 <UploadCloud className="w-10 h-10" />
               </div>
-              <span className="text-sm text-slate-400 font-semibold text-center group-hover:text-slate-300 transition-colors duration-300">
+              <span className="text-sm text-slate-500 font-semibold text-center">
                 터치하여 사진 촬영
                 <br />
                 또는 갤러리에서 선택
@@ -318,7 +307,7 @@ export default function App() {
           </div>
 
           {error && (
-            <div className="bg-red-500/10 text-red-400 p-4 rounded-2xl text-sm flex items-start gap-3 border border-red-500/20">
+            <div className="bg-red-50 text-red-600 p-4 rounded-2xl text-sm flex items-start gap-3 border border-red-100">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
               <p className="font-medium">{error}</p>
             </div>
@@ -329,7 +318,7 @@ export default function App() {
             disabled={!imageSrc || isProcessing}
             className={`w-full py-4 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-all duration-300 shadow-lg ${
               !imageSrc || isProcessing
-                ? "bg-slate-700 shadow-none cursor-not-allowed text-slate-500"
+                ? "bg-slate-300 shadow-none cursor-not-allowed text-slate-500"
                 : "bg-linear-to-r from-indigo-600 to-blue-500 hover:shadow-indigo-500/30 hover:-translate-y-0.5 active:translate-y-0"
             }`}
           >
@@ -344,13 +333,13 @@ export default function App() {
           </button>
 
           <div className="flex flex-col gap-3 flex-1">
-            <label className="font-bold text-slate-200 text-lg">
+            <label className="font-bold text-slate-700 text-lg">
               결과 미리보기
             </label>
-            <div className="bg-slate-900 rounded-2xl border border-slate-700 overflow-hidden flex items-center justify-center flex-1 min-h-[250px]">
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center flex-1 min-h-[250px]">
               {!imageSrc ? (
-                <div className="text-slate-500 flex flex-col items-center gap-3">
-                  <ImageIcon className="w-10 h-10 opacity-30" />
+                <div className="text-slate-400 flex flex-col items-center gap-3">
+                  <ImageIcon className="w-10 h-10 opacity-50" />
                   <span className="text-sm font-medium">
                     이미지를 업로드하면 표시됩니다.
                   </span>
@@ -359,7 +348,7 @@ export default function App() {
                 <div className="relative w-full p-2">
                   <canvas
                     ref={canvasRef}
-                    className="w-full h-auto block rounded-xl shadow-sm border border-slate-700"
+                    className="w-full h-auto block rounded-xl shadow-sm"
                   />
                 </div>
               )}
@@ -369,7 +358,7 @@ export default function App() {
           {dimensions.length > 0 && (
             <button
               onClick={downloadImage}
-              className="mt-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors duration-300 shadow-md"
+              className="mt-2 w-full py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors duration-300 shadow-md"
             >
               <Download className="w-5 h-5" />
               결과 이미지 갤러리에 저장하기
