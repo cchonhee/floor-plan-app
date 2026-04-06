@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [핵심 변경] AI가 대충 숫자를 찍어내지 못하도록 수학적 비율 계산 공식을 엄격하게 강제 주입했습니다.
+    // [핵심 변경] AI에게 수학 계산을 시키지 않고, 오직 '면적 값(area)'과 '좌표 값(x, y, w, h)'만 뽑아오게 합니다!
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 매우 정밀한 시각적 분석과 수학적 계산이 필요해.\n\n**1단계 (절대 기준 면적 파악):** 도면 하단 표 등에서 붉은색 구역 전체의 면적 값(예: 29.69, 500.01 등)을 정확히 찾아내어 '면적(Area)' 값으로 설정해.\n\n**2단계 (시각적 외곽 상자 - Bounding Box - 추출):** 붉은색 선들이 차지하는 가장 바깥쪽 테두리를 모두 감싸는 '하나의 거대한 직사각형 상자'를 이미지에서 식별해. 이 직사각형의 화면 대비 가로 폭(w 백분율)과 세로 높이(h 백분율)를 눈으로 보고 정확히 추출해. (예: 눈으로 보기에 가로가 세로보다 3배 길면 w 값이 h 값의 3배가 되어야 해!)\n\n**3단계 (수학적 역산 - 꼼수 방지 공식 적용):** 면적 숫자만 보고 대충 정사각형에 가까운 숫자를 때려 맞추지 마! 반드시 네가 눈으로 확인한 가로/세로 비율을 바탕으로 다음 수학 공식을 엄격하게 적용해.\n1. 시각적 비율(Ratio) = 가로 폭(w) / 세로 높이(h)\n2. 실제 총 세로 길이(Total Height) = 루트(면적 / 시각적 비율) 의 결과값\n3. 실제 총 가로 길이(Total Width) = 실제 총 세로 길이 * 시각적 비율 의 결과값\n\n위 공식을 철저하게 지켜서 시각적 비율이 완벽하게 반영된 실제 가로/세로 길이를 미터(m) 단위 소수점 첫째 자리까지 도출해.`,
+              text: `다음은 건축 평면도 이미지야. 너는 수학 계산을 하지 말고 정보만 추출해.\n\n**1단계 (면적 추출):** 도면 하단 표 등에서 붉은색 구역의 전체 면적(Area) 값(예: 29.69, 500.01 등)을 숫자만 정확히 찾아내어 'area' 값으로 출력해.\n\n**2단계 (경계 상자 - Bounding Box - 추출):** 붉은색 선들이 차지하는 가장 바깥쪽 테두리를 모두 감싸는 '하나의 거대한 직사각형 상자'를 이미지에서 식별해. 이 직사각형의 가장 왼쪽(x), 위쪽(y) 좌표와 가로 폭(w), 세로 높이(h)를 도면 크기 대비 백분율(0~100)로 정확히 추출해.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 도면의 굵은 붉은색 외곽선이 차지하는 '전체 영역(Bounding Box - 경계 상자)'을 파악하는 인공지능이야. 면적만 보고 대충 비슷한 숫자를 곱하지 말고, 반드시 시각적으로 추출한 가로 폭(w)과 세로 폭(h)의 비율(Ratio)을 구한 뒤, '세로=루트(면적/비율)', '가로=세로*비율' 공식을 사용해 수학적으로 역산해. 도출된 x, y, w, h 백분율과 공식을 통해 역산된 총 가로(totalWidth), 총 세로(totalHeight) 수치만 제이슨(JSON - JavaScript Object Notation, 자바스크립트 객체 표기법) 형식으로 출력해.",
+            text: "너는 도면에서 면적 값과 붉은색 외곽선이 차지하는 '전체 영역(Bounding Box - 경계 상자)'의 좌표만 추출하는 인공지능이야. 절대 네가 직접 수학적 역산(루트 등)을 하지 마. 오직 표에서 찾은 면적(area) 숫자와 시각적으로 확인한 경계 상자의 비율(x, y, w, h)만 JSON(JavaScript Object Notation - 자바스크립트 객체 표기법) 형식으로 출력해.",
           },
         ],
       },
@@ -104,36 +104,28 @@ export default function App() {
         responseSchema: {
           type: "OBJECT",
           properties: {
+            area: {
+              type: "NUMBER",
+              description: "도면 표에서 추출한 전체 면적 숫자 (예: 29.69)",
+            },
             x: {
               type: "NUMBER",
-              description:
-                "붉은색 전체 영역을 감싸는 사각형의 가장 왼쪽 X 좌표 (0-100)",
+              description: "붉은색 전체 영역의 가장 왼쪽 X 좌표 백분율 (0-100)",
             },
             y: {
               type: "NUMBER",
-              description:
-                "붉은색 전체 영역을 감싸는 사각형의 가장 위쪽 Y 좌표 (0-100)",
+              description: "붉은색 전체 영역의 가장 위쪽 Y 좌표 백분율 (0-100)",
             },
             w: {
               type: "NUMBER",
-              description:
-                "붉은색 전체 영역을 감싸는 사각형의 총 가로 폭 백분율 (0-100)",
+              description: "붉은색 전체 영역의 가로 폭 백분율 (0-100)",
             },
             h: {
               type: "NUMBER",
-              description:
-                "붉은색 전체 영역을 감싸는 사각형의 총 세로 높이 백분율 (0-100)",
-            },
-            totalWidth: {
-              type: "STRING",
-              description: "공식으로 역산된 총 가로 길이 (예: 11.2)",
-            },
-            totalHeight: {
-              type: "STRING",
-              description: "공식으로 역산된 총 세로 길이 (예: 2.6)",
+              description: "붉은색 전체 영역의 세로 높이 백분율 (0-100)",
             },
           },
-          required: ["x", "y", "w", "h", "totalWidth", "totalHeight"],
+          required: ["area", "x", "y", "w", "h"],
         },
       },
     };
@@ -158,8 +150,8 @@ export default function App() {
 
         if (responseText) {
           const parsedResult = JSON.parse(responseText);
-          // 단일 전체 영역 데이터를 상태에 저장
-          if (parsedResult.w && parsedResult.h) {
+          // 추출된 데이터 저장
+          if (parsedResult.w && parsedResult.h && parsedResult.area) {
             setDimensionData(parsedResult);
           }
           setIsProcessing(false);
@@ -196,15 +188,37 @@ export default function App() {
         const fontSize = Math.max(16, Math.floor(canvas.width * 0.015));
         const strokeWidth = Math.max(3, Math.floor(canvas.width * 0.003));
 
-        // AI가 찾아낸 전체 붉은색 영역의 경계 상자(Bounding Box) 좌표
+        // AI가 찾아낸 좌표를 화면의 픽셀(Pixel) 크기로 변환합니다.
         const left = (dimensionData.x / 100) * canvas.width;
         const top = (dimensionData.y / 100) * canvas.height;
-        const right = left + (dimensionData.w / 100) * canvas.width;
-        const bottom = top + (dimensionData.h / 100) * canvas.height;
+        const pixelW = (dimensionData.w / 100) * canvas.width;
+        const pixelH = (dimensionData.h / 100) * canvas.height;
+        const right = left + pixelW;
+        const bottom = top + pixelH;
+
+        // =====================================================================
+        // [핵심 해결 로직] 멍청한 AI 대신, 자바스크립트 코드가 완벽한 수학 계산을 수행합니다!
+        // =====================================================================
+
+        // 1. 화면에 보이는 픽셀을 통해 완벽한 시각적 비율(Ratio)을 측정합니다.
+        const visualRatio = pixelW / pixelH;
+
+        // 2. AI가 표에서 읽어온 진짜 면적(Area) 값 (예: 29.69)
+        const area = dimensionData.area;
+
+        // 3. 수학 공식 적용: 세로 길이 = 루트(면적 / 비율)
+        const calculatedHeight = Math.sqrt(area / visualRatio);
+
+        // 4. 수학 공식 적용: 가로 길이 = 세로 길이 * 비율
+        const calculatedWidth = calculatedHeight * visualRatio;
+
+        // 5. 소수점 첫째 자리까지만 텍스트로 예쁘게 자릅니다.
+        const totalWidthText = calculatedWidth.toFixed(1);
+        const totalHeightText = calculatedHeight.toFixed(1);
 
         const box = { left, top, right, bottom };
 
-        // 치수선 그리기 함수
+        // 오토캐드(AutoCAD) 스타일 치수선 그리기 함수
         const drawOverallDimension = (box, text, position) => {
           ctx.save();
           ctx.strokeStyle = "#2563eb";
@@ -320,15 +334,11 @@ export default function App() {
           ctx.restore();
         };
 
-        // 전체 영역을 감싸는 상하좌우 4면에 깔끔하게 치수선을 그립니다.
-        if (dimensionData.totalWidth) {
-          drawOverallDimension(box, dimensionData.totalWidth, "top");
-          drawOverallDimension(box, dimensionData.totalWidth, "bottom");
-        }
-        if (dimensionData.totalHeight) {
-          drawOverallDimension(box, dimensionData.totalHeight, "left");
-          drawOverallDimension(box, dimensionData.totalHeight, "right");
-        }
+        // 완벽하게 계산된 치수 텍스트(totalWidthText, totalHeightText)를 화면에 그립니다.
+        drawOverallDimension(box, totalWidthText, "top");
+        drawOverallDimension(box, totalWidthText, "bottom");
+        drawOverallDimension(box, totalHeightText, "left");
+        drawOverallDimension(box, totalHeightText, "right");
       }
     };
     img.src = imageSrc;
@@ -338,7 +348,7 @@ export default function App() {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = "평면도_전체외곽치수.png";
+    link.download = "평면도_완벽수치계산.png";
     link.href = dataUrl;
     link.click();
   };
@@ -352,7 +362,7 @@ export default function App() {
             도면 수치 자동 입력기
           </h1>
           <p className="text-indigo-100 text-sm mt-2 font-medium opacity-90">
-            전체 외곽 영역 면적 비율 완벽 반영
+            면적 기반 수학적 역산 알고리즘 적용 완벽판
           </p>
         </div>
 
@@ -399,10 +409,10 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                정확한 수학 공식을 적용하여 계산 중입니다...
+                정확한 수학 알고리즘으로 길이를 연산 중입니다...
               </>
             ) : (
-              "전체 외곽 치수 비율 계산 및 그리기"
+              "완벽한 비율 치수 계산 및 그리기"
             )}
           </button>
 
