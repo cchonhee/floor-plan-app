@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [핵심 로직 변경] 전체 면적(500.01㎡ 등)을 절대 기준으로 찾고, 방의 사각형 경계(Bounding Box)를 정확히 따내도록 명령합니다.
+    // [핵심 변경 1] 500.01㎡를 절대 기준으로 주고 수학적 비율 역산을 강제합니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 매우 정밀한 수학적 계산이 필요해.\n\n**1단계 (절대 기준 설정):** 도면 하단이나 우측의 표(Table)를 읽고, 붉은색 선 등으로 표시된 구역의 **"전체 면적(예: 500.01 ㎡ 등)"**이 숫자로 적혀 있는지 무조건 찾아내. 이것이 이 도면의 유일한 축척(Scale) 기준이야.\n\n**2단계 (방 경계선 인식):** 도면 내에 나뉘어 있는 각 방(개척실, 계단실, 송백실, 음악실, 음악준비실, 탐구실 등)의 위치를 찾아. 그리고 각 방을 둘러싸는 **정확한 직사각형 테두리(Bounding Box)**를 이미지 대비 백분율(0~100)로 추출해. (x: 왼쪽 끝, y: 위쪽 끝, w: 가로 폭, h: 세로 높이)\n\n**3단계 (비율 기반 역산 계산 - 가장 중요):** 1단계에서 찾은 전체 면적(예: 500.01㎡)과 각 방의 픽셀 비율(w * h)을 비교·역산하여, 각 방의 실제 가로(W) 길이와 세로(H) 길이를 도출해. 시각적으로 세면실처럼 가로가 확연히 길면 무조건 가로 수치가 길게 나와야 해. 소수점 첫째 자리 미터 단위(예: 13.0)로 계산해.`,
+              text: `다음은 건축 평면도 이미지야. 매우 정밀한 수학적 계산이 필요해.\n\n**1단계 (절대 기준 설정 - 가장 중요!):** 도면 하단의 표를 보면 붉은색 선으로 표시된 구역(4층 탐구실, 음악준비실, 음악실, 송백실, 개척실, 계단실2 등)의 전체 면적이 **"500.01 ㎡"**라고 명시되어 있어. 이 500.01㎡가 모든 길이를 구하는 유일하고 절대적인 단서야!\n\n**2단계 (방 경계선 및 면적 역산):** 붉은 테두리 내부에 있는 각 방의 영역을 찾아내. 그리고 1단계에서 확인한 전체 면적(500.01㎡)을 기준으로 각 방이 차지하는 픽셀 면적 비율을 수학적으로 계산해서, 각 방의 실제 가로(W)와 세로(H) 길이를 역산해내. (예: 13.0m 등 소수점 첫째 자리까지)\n\n**3단계 (좌표 추출):** 치수보조선을 그리기 위해 각 방의 테두리를 정확히 따내야 해. 각 방을 감싸는 직사각형(Bounding Box)의 가장 왼쪽(x), 위쪽(y) 좌표와 가로 너비(w), 세로 높이(h)를 도면 전체 크기 대비 백분율(0~100)로 추출해.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 도면의 표에서 '전체 면적'을 찾아내어 이를 바탕으로 각 방의 치수를 역산하는 건축 계산기야. 각 방의 테두리 좌표(x, y, w, h)를 정확하게 추출해 주어야 프론트엔드에서 치수보조선을 그릴 수 있어. 결과는 무조건 JSON 양식으로 출력해.",
+            text: "너는 도면의 표에서 '전체 면적(500.01 등)'을 찾아내어 이를 바탕으로 각 방의 치수를 수학적으로 역산하는 건축 계산기야. 각 방의 테두리 좌표(x, y, w, h)를 정확하게 추출해 주어야 프론트엔드에서 치수보조선을 그릴 수 있어. 결과는 JSON 양식으로 출력해.",
           },
         ],
       },
@@ -111,7 +111,7 @@ export default function App() {
                 properties: {
                   roomName: {
                     type: "STRING",
-                    description: "방 이름 (예: 음악실)",
+                    description: "방 이름 (예: 송백실)",
                   },
                   widthText: {
                     type: "STRING",
@@ -213,7 +213,7 @@ export default function App() {
     }
   };
 
-  // [핵심 변경] 경계선(Bounding Box)을 기준으로 치수선(Dimension Line)과 치수보조선(Extension Line)을 그립니다.
+  // [핵심 변경 2] 진짜 CAD 스타일 치수선 & 치수보조선 그리기 로직
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -227,9 +227,11 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        const fontSize = Math.max(12, Math.floor(canvas.width * 0.009));
+        // 도면 해상도에 비례한 폰트 및 선 굵기 설정
+        const fontSize = Math.max(14, Math.floor(canvas.width * 0.012));
+        const strokeWidth = Math.max(2, Math.floor(canvas.width * 0.002));
 
-        // 치수선을 그리는 헬퍼 함수 (CAD 스타일)
+        // 치수선 그리기 함수 (AutoCAD 스타일)
         const drawCADLine = (
           startX,
           startY,
@@ -240,36 +242,36 @@ export default function App() {
           roomBox,
         ) => {
           ctx.save();
-          // 치수선 색상을 눈에 띄는 진한 파란색으로 설정
-          ctx.strokeStyle = "#2563eb";
+          ctx.strokeStyle = "#2563eb"; // 선명한 파란색
           ctx.fillStyle = "#2563eb";
-          ctx.lineWidth = 2;
+          ctx.lineWidth = strokeWidth;
 
-          // 벽면에서 얼마나 떨어져서 치수선을 그릴지(offset)
-          const offset = Math.max(20, canvas.width * 0.02);
-          // 양 끝 까치발(사선)의 크기
-          const tickSize = 6;
+          // CAD 선 그리기 세팅값
+          const offset = Math.max(30, canvas.width * 0.035); // 치수선을 벽에서 얼마나 띄울지
+          const gap = 5; // 벽과 치수보조선 사이의 아주 얇은 틈 (CAD 도면 국룰)
+          const overrun = 10; // 치수선을 넘어가는 치수보조선의 꼬리 길이
+          const tickSize = 6; // 대각선 까치발(Tick) 크기
 
           ctx.beginPath();
 
           if (type === "W") {
-            // 가로(W): 방의 아래쪽(Bottom) 경계선 안쪽으로 살짝 올려서 치수선 생성 (주변 방 간섭 최소화)
-            const yLine = roomBox.bottom - offset;
+            // W(가로): 방의 '아래쪽'으로 치수선을 뺍니다.
+            const yLine = roomBox.bottom + offset;
 
-            // 치수보조선 (양 끝에서 위로 올라오는 선)
-            ctx.moveTo(startX, roomBox.bottom);
-            ctx.lineTo(startX, yLine - tickSize);
-            ctx.moveTo(endX, roomBox.bottom);
-            ctx.lineTo(endX, yLine - tickSize);
+            // 1. 치수보조선 (양 끝에서 아래로 내려오는 선)
+            ctx.moveTo(startX, roomBox.bottom + gap);
+            ctx.lineTo(startX, yLine + overrun);
+            ctx.moveTo(endX, roomBox.bottom + gap);
+            ctx.lineTo(endX, yLine + overrun);
             ctx.stroke();
 
-            // 치수선 (가로로 쭉 긋는 선)
+            // 2. 치수선 (가로로 가로지르는 선)
             ctx.beginPath();
             ctx.moveTo(startX, yLine);
             ctx.lineTo(endX, yLine);
             ctx.stroke();
 
-            // 까치발 (양 끝 사선 틱)
+            // 3. 까치발 (대각선 틱)
             ctx.beginPath();
             ctx.moveTo(startX - tickSize, yLine + tickSize);
             ctx.lineTo(startX + tickSize, yLine - tickSize);
@@ -277,42 +279,43 @@ export default function App() {
             ctx.lineTo(endX + tickSize, yLine - tickSize);
             ctx.stroke();
 
-            // 텍스트 그리기 (선을 파먹지 않도록 흰색 배경 깔기)
+            // 4. 수치 텍스트 배치
             ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
+            ctx.textBaseline = "bottom";
             ctx.font = `bold ${fontSize}px sans-serif`;
             const displayText = `W: ${text}m`;
             const tw = ctx.measureText(displayText).width;
 
-            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            // 텍스트 뒤에 얇은 흰색 배경을 깔아 선과 겹쳐도 잘 보이게 함
+            ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
             ctx.fillRect(
               startX + (endX - startX) / 2 - tw / 2 - 4,
-              yLine - fontSize * 0.6,
+              yLine - fontSize - 2,
               tw + 8,
-              fontSize * 1.2,
+              fontSize + 4,
             );
 
-            ctx.fillStyle = "#1e3a8a"; // 더 진한 네이비색 글씨
-            ctx.fillText(displayText, startX + (endX - startX) / 2, yLine);
+            ctx.fillStyle = "#1e3a8a"; // 텍스트는 더 짙은 네이비색
+            ctx.fillText(displayText, startX + (endX - startX) / 2, yLine - 2);
           } else if (type === "H") {
-            // 세로(H): 방의 왼쪽(Left) 경계선 안쪽으로 살짝 밀어서 치수선 생성
-            const xLine = roomBox.left + offset;
+            // H(세로): 방의 '왼쪽'으로 치수선을 뺍니다.
+            const xLine = roomBox.left - offset;
 
-            // 치수보조선
+            // 1. 치수보조선 (양 끝에서 왼쪽으로 뻗어나가는 선)
             ctx.beginPath();
-            ctx.moveTo(roomBox.left, startY);
-            ctx.lineTo(xLine + tickSize, startY);
-            ctx.moveTo(roomBox.left, endY);
-            ctx.lineTo(xLine + tickSize, endY);
+            ctx.moveTo(roomBox.left - gap, startY);
+            ctx.lineTo(xLine - overrun, startY);
+            ctx.moveTo(roomBox.left - gap, endY);
+            ctx.lineTo(xLine - overrun, endY);
             ctx.stroke();
 
-            // 치수선
+            // 2. 치수선 (세로로 가로지르는 선)
             ctx.beginPath();
             ctx.moveTo(xLine, startY);
             ctx.lineTo(xLine, endY);
             ctx.stroke();
 
-            // 까치발
+            // 3. 까치발
             ctx.beginPath();
             ctx.moveTo(xLine - tickSize, startY + tickSize);
             ctx.lineTo(xLine + tickSize, startY - tickSize);
@@ -320,29 +323,29 @@ export default function App() {
             ctx.lineTo(xLine + tickSize, endY - tickSize);
             ctx.stroke();
 
-            // 텍스트 그리기 (가로로 보기 편하게)
-            ctx.textAlign = "center";
+            // 4. 수치 텍스트 배치 (회전 없이 정방향으로, 선 왼쪽에 배치)
+            ctx.textAlign = "right";
             ctx.textBaseline = "middle";
             ctx.font = `bold ${fontSize}px sans-serif`;
             const displayText = `H: ${text}m`;
             const tw = ctx.measureText(displayText).width;
 
-            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
             ctx.fillRect(
-              xLine - tw / 2 - 4,
-              startY + (endY - startY) / 2 - fontSize * 0.6,
+              xLine - tw - 10,
+              startY + (endY - startY) / 2 - fontSize / 2 - 2,
               tw + 8,
-              fontSize * 1.2,
+              fontSize + 4,
             );
 
             ctx.fillStyle = "#1e3a8a";
-            ctx.fillText(displayText, xLine, startY + (endY - startY) / 2);
+            ctx.fillText(displayText, xLine - 6, startY + (endY - startY) / 2);
           }
           ctx.restore();
         };
 
         dimensions.forEach((dim) => {
-          // AI가 찾아준 방의 4면 경계선 (퍼센트를 픽셀로 변환)
+          // AI가 찾은 방의 4면 경계선을 픽셀로 변환
           const left = (dim.x / 100) * canvas.width;
           const top = (dim.y / 100) * canvas.height;
           const width = (dim.w / 100) * canvas.width;
@@ -352,7 +355,7 @@ export default function App() {
 
           const roomBox = { left, top, right, bottom };
 
-          // W(가로) 치수선 그리기 (방 아래쪽 라인)
+          // W(가로) 치수선 그리기
           if (dim.widthText) {
             drawCADLine(
               left,
@@ -365,7 +368,7 @@ export default function App() {
             );
           }
 
-          // H(세로) 치수선 그리기 (방 왼쪽 라인)
+          // H(세로) 치수선 그리기
           if (dim.heightText) {
             drawCADLine(left, top, left, bottom, dim.heightText, "H", roomBox);
           }
@@ -379,7 +382,7 @@ export default function App() {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = "평면도_수치완성.png";
+    link.download = "평면도_치수선완성.png";
     link.href = dataUrl;
     link.click();
   };
@@ -393,7 +396,7 @@ export default function App() {
             도면 수치 자동 입력기
           </h1>
           <p className="text-indigo-100 text-sm mt-2 font-medium opacity-90">
-            AI가 도면을 읽고 치수선을 그려줍니다.
+            면적 기반 역산 & CAD 스타일 치수선 표기
           </p>
         </div>
 
@@ -440,7 +443,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                AI가 비율을 계산하여 선을 긋고 있습니다...
+                전체 면적으로 역산 및 치수선 생성 중...
               </>
             ) : (
               "수치 역산 및 치수선 그리기"
