@@ -67,7 +67,7 @@ export default function App() {
 
     if (!apiKey || apiKey.trim() === "") {
       setError(
-        `🚨 오류: API 키가 설정되지 않았습니다. Vercel 환경 변수를 다시 확인해 주세요.`,
+        `🚨 오류: API(Application Programming Interface - 프로그램 연결 통로) 키가 설정되지 않았습니다. 버셀(Vercel) 환경 변수를 다시 확인해 주세요.`,
       );
       setIsProcessing(false);
       return;
@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [핵심 변경] 선분을 쪼개지 말고, 붉은 선의 '전체 외곽 영역(Bounding Box)' 하나만 찾도록 명령!
+    // [핵심 변경] AI가 대충 숫자를 찍어내지 못하도록 수학적 비율 계산 공식을 엄격하게 강제 주입했습니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 매우 정밀한 시각적 분석과 수학적 계산이 필요해.\n\n**1단계 (절대 기준 설정):** 도면 하단의 표를 보면 특정 구역 전체의 면적이 **"500.01 ㎡"** (또는 도면에 적힌 다른 전체 면적 값)라고 명시되어 있어. 이 면적을 역산의 유일한 척도로 삼아.\n\n**2단계 (전체 외곽 영역 포착 - 가장 중요!):** 붉은색 선들이 지그재그로 꺾이는 복잡한 형태를 개별 선분으로 쪼개지 마! 대신 붉은색 선들이 차지하는 **"가장 바깥쪽 테두리를 모두 감싸는 하나의 거대한 직사각형(Bounding Box)"**을 가상으로 그려내. 이 거대한 직사각형의 가장 왼쪽(x), 위쪽(y) 좌표와 전체 가로 폭(w), 세로 높이(h)를 백분율(0~100)로 추출해.\n\n**3단계 (총 길이 계산):** 1단계의 전체 면적(500.01㎡)을 바탕으로, 2단계에서 구한 '거대한 직사각형'의 실제 **총 가로 길이(Total Width)**와 **총 세로 길이(Total Height)**를 미터(m) 단위 소수점 첫째 자리까지 역산해(예: 41.6m).`,
+              text: `다음은 건축 평면도 이미지야. 매우 정밀한 시각적 분석과 수학적 계산이 필요해.\n\n**1단계 (절대 기준 면적 파악):** 도면 하단 표 등에서 붉은색 구역 전체의 면적 값(예: 29.69, 500.01 등)을 정확히 찾아내어 '면적(Area)' 값으로 설정해.\n\n**2단계 (시각적 외곽 상자 - Bounding Box - 추출):** 붉은색 선들이 차지하는 가장 바깥쪽 테두리를 모두 감싸는 '하나의 거대한 직사각형 상자'를 이미지에서 식별해. 이 직사각형의 화면 대비 가로 폭(w 백분율)과 세로 높이(h 백분율)를 눈으로 보고 정확히 추출해. (예: 눈으로 보기에 가로가 세로보다 3배 길면 w 값이 h 값의 3배가 되어야 해!)\n\n**3단계 (수학적 역산 - 꼼수 방지 공식 적용):** 면적 숫자만 보고 대충 정사각형에 가까운 숫자를 때려 맞추지 마! 반드시 네가 눈으로 확인한 가로/세로 비율을 바탕으로 다음 수학 공식을 엄격하게 적용해.\n1. 시각적 비율(Ratio) = 가로 폭(w) / 세로 높이(h)\n2. 실제 총 세로 길이(Total Height) = 루트(면적 / 시각적 비율) 의 결과값\n3. 실제 총 가로 길이(Total Width) = 실제 총 세로 길이 * 시각적 비율 의 결과값\n\n위 공식을 철저하게 지켜서 시각적 비율이 완벽하게 반영된 실제 가로/세로 길이를 미터(m) 단위 소수점 첫째 자리까지 도출해.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 도면의 굵은 붉은색 외곽선이 차지하는 '전체 영역(Bounding Box)'을 하나로 묶어서 파악하는 AI야. 복잡한 선분 쪼개기는 에러를 유발하므로 절대 하지 마. 오직 전체를 감싸는 큰 사각형의 x, y, w, h 비율과 역산된 총 가로(totalWidth), 총 세로(totalHeight) 수치만 JSON 형식으로 출력해.",
+            text: "너는 도면의 굵은 붉은색 외곽선이 차지하는 '전체 영역(Bounding Box - 경계 상자)'을 파악하는 인공지능이야. 면적만 보고 대충 비슷한 숫자를 곱하지 말고, 반드시 시각적으로 추출한 가로 폭(w)과 세로 폭(h)의 비율(Ratio)을 구한 뒤, '세로=루트(면적/비율)', '가로=세로*비율' 공식을 사용해 수학적으로 역산해. 도출된 x, y, w, h 백분율과 공식을 통해 역산된 총 가로(totalWidth), 총 세로(totalHeight) 수치만 제이슨(JSON - JavaScript Object Notation, 자바스크립트 객체 표기법) 형식으로 출력해.",
           },
         ],
       },
@@ -126,11 +126,11 @@ export default function App() {
             },
             totalWidth: {
               type: "STRING",
-              description: "역산된 총 가로 길이 (예: 41.6)",
+              description: "공식으로 역산된 총 가로 길이 (예: 11.2)",
             },
             totalHeight: {
               type: "STRING",
-              description: "역산된 총 세로 길이 (예: 12.0)",
+              description: "공식으로 역산된 총 세로 길이 (예: 2.6)",
             },
           },
           required: ["x", "y", "w", "h", "totalWidth", "totalHeight"],
@@ -180,7 +180,6 @@ export default function App() {
     }
   };
 
-  // [핵심 변경 2] 난잡한 선을 없애고, 전체 영역 바깥에 4개의 완벽한 직선(CAD 치수선)을 그립니다.
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -197,7 +196,7 @@ export default function App() {
         const fontSize = Math.max(16, Math.floor(canvas.width * 0.015));
         const strokeWidth = Math.max(3, Math.floor(canvas.width * 0.003));
 
-        // AI가 찾아낸 전체 붉은색 영역의 바운딩 박스(Bounding Box) 좌표
+        // AI가 찾아낸 전체 붉은색 영역의 경계 상자(Bounding Box) 좌표
         const left = (dimensionData.x / 100) * canvas.width;
         const top = (dimensionData.y / 100) * canvas.height;
         const right = left + (dimensionData.w / 100) * canvas.width;
@@ -205,14 +204,14 @@ export default function App() {
 
         const box = { left, top, right, bottom };
 
-        // 치수선 그리기 헬퍼 함수
+        // 치수선 그리기 함수
         const drawOverallDimension = (box, text, position) => {
           ctx.save();
           ctx.strokeStyle = "#2563eb";
           ctx.fillStyle = "#2563eb";
           ctx.lineWidth = strokeWidth;
 
-          const offset = Math.max(50, canvas.width * 0.05); // 도면 바깥으로 시원하게 빼줍니다.
+          const offset = Math.max(50, canvas.width * 0.05); // 도면 바깥으로 빼줍니다.
           const gap = 10;
           const overrun = 15;
           const tickSize = 8;
@@ -238,7 +237,7 @@ export default function App() {
             ctx.lineTo(box.right, yLine);
             ctx.stroke();
 
-            // 까치발
+            // 까치발 (대각선 선)
             ctx.beginPath();
             ctx.moveTo(box.left - tickSize, yLine + tickSize);
             ctx.lineTo(box.left + tickSize, yLine - tickSize);
@@ -287,7 +286,7 @@ export default function App() {
             ctx.lineTo(xLine, box.bottom);
             ctx.stroke();
 
-            // 까치발
+            // 까치발 (대각선 선)
             ctx.beginPath();
             ctx.moveTo(xLine - tickSize, box.top + tickSize);
             ctx.lineTo(xLine + tickSize, box.top - tickSize);
@@ -353,7 +352,7 @@ export default function App() {
             도면 수치 자동 입력기
           </h1>
           <p className="text-indigo-100 text-sm mt-2 font-medium opacity-90">
-            전체 외곽 영역(Bounding Box) 면적 역산 표기
+            전체 외곽 영역 면적 비율 완벽 반영
           </p>
         </div>
 
@@ -400,10 +399,10 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                전체 외곽 영역의 치수를 역산 중입니다...
+                정확한 수학 공식을 적용하여 계산 중입니다...
               </>
             ) : (
-              "전체 외곽 치수 계산 및 그리기"
+              "전체 외곽 치수 비율 계산 및 그리기"
             )}
           </button>
 
