@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [핵심 변경] W, H 약자 추가 및 '시각적 비율(가로가 긴지 세로가 긴지)'을 강제로 확인하도록 명령했습니다.
+    // [핵심 로직 변경] 전체 면적(500.01㎡ 등)을 절대 기준으로 찾고, 방의 사각형 경계(Bounding Box)를 정확히 따내도록 명령합니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야.\n\n1단계: 도면에 적힌 모든 '방 이름(용도)' 글씨를 찾아내.\n\n2단계 (비율 및 치수 계산 - 매우 중요!): 각 방의 가로(W), 세로(H) 길이를 계산해. 이때 **반드시 시각적으로 방의 형태(가로가 긴 직사각형인지, 세로가 긴 직사각형인지)를 확인해!** 예를 들어 '세면실'처럼 눈으로 보기에 가로가 확연히 긴데 W와 H를 똑같이 계산하면 완전히 틀린 거야. 시각적 비율에 맞게 정확히 계산해.\n\n3단계 (단위 및 포맷): 계산된 길이는 미터(m) 단위로 소수점 첫째 자리까지 변환하고, 반드시 앞에 약자를 붙여서 **'W: 3.6m', 'H: 2.4m'** 형식으로 출력해.\n\n4단계 (위치): 수치를 표시할 X, Y 좌표(0~100)는 복잡하게 생각하지 말고, 도면에 인쇄된 **"해당 방 이름 글씨의 한가운데(Center)"** 좌표로 통일해서 찍어. (동일한 방은 무조건 1개만 출력해!)`,
+              text: `다음은 건축 평면도 이미지야. 매우 정밀한 수학적 계산이 필요해.\n\n**1단계 (절대 기준 설정):** 도면 하단이나 우측의 표(Table)를 읽고, 붉은색 선 등으로 표시된 구역의 **"전체 면적(예: 500.01 ㎡ 등)"**이 숫자로 적혀 있는지 무조건 찾아내. 이것이 이 도면의 유일한 축척(Scale) 기준이야.\n\n**2단계 (방 경계선 인식):** 도면 내에 나뉘어 있는 각 방(개척실, 계단실, 송백실, 음악실, 음악준비실, 탐구실 등)의 위치를 찾아. 그리고 각 방을 둘러싸는 **정확한 직사각형 테두리(Bounding Box)**를 이미지 대비 백분율(0~100)로 추출해. (x: 왼쪽 끝, y: 위쪽 끝, w: 가로 폭, h: 세로 높이)\n\n**3단계 (비율 기반 역산 계산 - 가장 중요):** 1단계에서 찾은 전체 면적(예: 500.01㎡)과 각 방의 픽셀 비율(w * h)을 비교·역산하여, 각 방의 실제 가로(W) 길이와 세로(H) 길이를 도출해. 시각적으로 세면실처럼 가로가 확연히 길면 무조건 가로 수치가 길게 나와야 해. 소수점 첫째 자리 미터 단위(예: 13.0)로 계산해.`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 도면 치수 계산 전문가야. 시각적 가로/세로 비율을 엄격히 따져서 계산해. 형식은 반드시 'W: 0.0m', 'H: 0.0m'로 출력하고, 좌표는 방 이름 텍스트의 중앙으로 잡아. JSON 형식으로만 응답해.",
+            text: "너는 도면의 표에서 '전체 면적'을 찾아내어 이를 바탕으로 각 방의 치수를 역산하는 건축 계산기야. 각 방의 테두리 좌표(x, y, w, h)를 정확하게 추출해 주어야 프론트엔드에서 치수보조선을 그릴 수 있어. 결과는 무조건 JSON 양식으로 출력해.",
           },
         ],
       },
@@ -111,26 +111,44 @@ export default function App() {
                 properties: {
                   roomName: {
                     type: "STRING",
-                    description: "방 이름 (예: 세면실)",
+                    description: "방 이름 (예: 음악실)",
                   },
                   widthText: {
                     type: "STRING",
-                    description: "가로 길이 (예: W: 3.6m)",
+                    description: "역산된 가로 길이 숫자만 (예: 13.0)",
                   },
                   heightText: {
                     type: "STRING",
-                    description: "세로 길이 (예: H: 2.4m)",
+                    description: "역산된 세로 길이 숫자만 (예: 5.0)",
                   },
                   x: {
                     type: "NUMBER",
-                    description: "방 이름 '글씨'의 정중앙 X 좌표 백분율",
+                    description:
+                      "방의 가장 왼쪽(Left) 경계선 X 좌표 백분율 (0-100)",
                   },
                   y: {
                     type: "NUMBER",
-                    description: "방 이름 '글씨'의 정중앙 Y 좌표 백분율",
+                    description:
+                      "방의 가장 위쪽(Top) 경계선 Y 좌표 백분율 (0-100)",
+                  },
+                  w: {
+                    type: "NUMBER",
+                    description: "방의 가로 폭(Width) 백분율 (0-100)",
+                  },
+                  h: {
+                    type: "NUMBER",
+                    description: "방의 세로 높이(Height) 백분율 (0-100)",
                   },
                 },
-                required: ["roomName", "widthText", "heightText", "x", "y"],
+                required: [
+                  "roomName",
+                  "widthText",
+                  "heightText",
+                  "x",
+                  "y",
+                  "w",
+                  "h",
+                ],
               },
             },
           },
@@ -166,7 +184,8 @@ export default function App() {
           (parsedResult.dimensions || []).forEach((dim) => {
             if (
               dim.widthText &&
-              !dim.widthText.includes("N/A") &&
+              dim.w &&
+              dim.h &&
               dim.roomName &&
               !seenRooms.has(dim.roomName)
             ) {
@@ -194,6 +213,7 @@ export default function App() {
     }
   };
 
+  // [핵심 변경] 경계선(Bounding Box)을 기준으로 치수선(Dimension Line)과 치수보조선(Extension Line)을 그립니다.
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -207,66 +227,147 @@ export default function App() {
       ctx.drawImage(img, 0, 0);
 
       if (dimensions && dimensions.length > 0) {
-        const fontSize = Math.max(10, Math.floor(canvas.width * 0.009));
-        ctx.font = `bold ${fontSize}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+        const fontSize = Math.max(12, Math.floor(canvas.width * 0.009));
+
+        // 치수선을 그리는 헬퍼 함수 (CAD 스타일)
+        const drawCADLine = (
+          startX,
+          startY,
+          endX,
+          endY,
+          text,
+          type,
+          roomBox,
+        ) => {
+          ctx.save();
+          // 치수선 색상을 눈에 띄는 진한 파란색으로 설정
+          ctx.strokeStyle = "#2563eb";
+          ctx.fillStyle = "#2563eb";
+          ctx.lineWidth = 2;
+
+          // 벽면에서 얼마나 떨어져서 치수선을 그릴지(offset)
+          const offset = Math.max(20, canvas.width * 0.02);
+          // 양 끝 까치발(사선)의 크기
+          const tickSize = 6;
+
+          ctx.beginPath();
+
+          if (type === "W") {
+            // 가로(W): 방의 아래쪽(Bottom) 경계선 안쪽으로 살짝 올려서 치수선 생성 (주변 방 간섭 최소화)
+            const yLine = roomBox.bottom - offset;
+
+            // 치수보조선 (양 끝에서 위로 올라오는 선)
+            ctx.moveTo(startX, roomBox.bottom);
+            ctx.lineTo(startX, yLine - tickSize);
+            ctx.moveTo(endX, roomBox.bottom);
+            ctx.lineTo(endX, yLine - tickSize);
+            ctx.stroke();
+
+            // 치수선 (가로로 쭉 긋는 선)
+            ctx.beginPath();
+            ctx.moveTo(startX, yLine);
+            ctx.lineTo(endX, yLine);
+            ctx.stroke();
+
+            // 까치발 (양 끝 사선 틱)
+            ctx.beginPath();
+            ctx.moveTo(startX - tickSize, yLine + tickSize);
+            ctx.lineTo(startX + tickSize, yLine - tickSize);
+            ctx.moveTo(endX - tickSize, yLine + tickSize);
+            ctx.lineTo(endX + tickSize, yLine - tickSize);
+            ctx.stroke();
+
+            // 텍스트 그리기 (선을 파먹지 않도록 흰색 배경 깔기)
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const displayText = `W: ${text}m`;
+            const tw = ctx.measureText(displayText).width;
+
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.fillRect(
+              startX + (endX - startX) / 2 - tw / 2 - 4,
+              yLine - fontSize * 0.6,
+              tw + 8,
+              fontSize * 1.2,
+            );
+
+            ctx.fillStyle = "#1e3a8a"; // 더 진한 네이비색 글씨
+            ctx.fillText(displayText, startX + (endX - startX) / 2, yLine);
+          } else if (type === "H") {
+            // 세로(H): 방의 왼쪽(Left) 경계선 안쪽으로 살짝 밀어서 치수선 생성
+            const xLine = roomBox.left + offset;
+
+            // 치수보조선
+            ctx.beginPath();
+            ctx.moveTo(roomBox.left, startY);
+            ctx.lineTo(xLine + tickSize, startY);
+            ctx.moveTo(roomBox.left, endY);
+            ctx.lineTo(xLine + tickSize, endY);
+            ctx.stroke();
+
+            // 치수선
+            ctx.beginPath();
+            ctx.moveTo(xLine, startY);
+            ctx.lineTo(xLine, endY);
+            ctx.stroke();
+
+            // 까치발
+            ctx.beginPath();
+            ctx.moveTo(xLine - tickSize, startY + tickSize);
+            ctx.lineTo(xLine + tickSize, startY - tickSize);
+            ctx.moveTo(xLine - tickSize, endY + tickSize);
+            ctx.lineTo(xLine + tickSize, endY - tickSize);
+            ctx.stroke();
+
+            // 텍스트 그리기 (가로로 보기 편하게)
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const displayText = `H: ${text}m`;
+            const tw = ctx.measureText(displayText).width;
+
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.fillRect(
+              xLine - tw / 2 - 4,
+              startY + (endY - startY) / 2 - fontSize * 0.6,
+              tw + 8,
+              fontSize * 1.2,
+            );
+
+            ctx.fillStyle = "#1e3a8a";
+            ctx.fillText(displayText, xLine, startY + (endY - startY) / 2);
+          }
+          ctx.restore();
+        };
 
         dimensions.forEach((dim) => {
-          // AI가 찾은 '방 이름 글씨'의 중앙 좌표
-          const textCenterX = (dim.x / 100) * canvas.width;
-          const textCenterY = (dim.y / 100) * canvas.height;
+          // AI가 찾아준 방의 4면 경계선 (퍼센트를 픽셀로 변환)
+          const left = (dim.x / 100) * canvas.width;
+          const top = (dim.y / 100) * canvas.height;
+          const width = (dim.w / 100) * canvas.width;
+          const height = (dim.h / 100) * canvas.height;
+          const right = left + width;
+          const bottom = top + height;
 
-          const wText = dim.widthText || "";
-          const hText = dim.heightText || "";
+          const roomBox = { left, top, right, bottom };
 
-          // W, H 텍스트 너비 계산
-          const wWidth = ctx.measureText(wText).width;
-          const hWidth = ctx.measureText(hText).width;
-          const maxWidth = Math.max(wWidth, hWidth);
-
-          const paddingX = fontSize * 0.8;
-          const boxWidth = maxWidth + paddingX * 2;
-          // 텍스트 2줄(W, H)만 들어가도록 박스 높이 축소
-          const boxHeight = wText && hText ? fontSize * 2.6 : fontSize * 1.5;
-
-          // [핵심] 상자를 '방 이름 글씨' 바로 아래(약 1.5배 높이만큼 밑)에 배치합니다.
-          // 방 이름표를 상자 안에 넣지 않으므로 더욱 깔끔합니다.
-          const yOffset = fontSize * 1.8;
-          const boxCenterY = textCenterY + yOffset;
-
-          // 파란색 테두리 하얀 상자 그리기
-          ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-          ctx.beginPath();
-          if (ctx.roundRect) {
-            ctx.roundRect(
-              textCenterX - boxWidth / 2,
-              boxCenterY - boxHeight / 2,
-              boxWidth,
-              boxHeight,
-              4,
-            );
-          } else {
-            ctx.rect(
-              textCenterX - boxWidth / 2,
-              boxCenterY - boxHeight / 2,
-              boxWidth,
-              boxHeight,
+          // W(가로) 치수선 그리기 (방 아래쪽 라인)
+          if (dim.widthText) {
+            drawCADLine(
+              left,
+              bottom,
+              right,
+              bottom,
+              dim.widthText,
+              "W",
+              roomBox,
             );
           }
-          ctx.fill();
 
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = "#2563eb";
-          ctx.stroke();
-
-          // W, H 수치 텍스트 그리기
-          ctx.fillStyle = "#2563eb";
-          if (wText && hText) {
-            ctx.fillText(wText, textCenterX, boxCenterY - fontSize * 0.6);
-            ctx.fillText(hText, textCenterX, boxCenterY + fontSize * 0.6);
-          } else if (wText || hText) {
-            ctx.fillText(wText || hText, textCenterX, boxCenterY);
+          // H(세로) 치수선 그리기 (방 왼쪽 라인)
+          if (dim.heightText) {
+            drawCADLine(left, top, left, bottom, dim.heightText, "H", roomBox);
           }
         });
       }
@@ -292,7 +393,7 @@ export default function App() {
             도면 수치 자동 입력기
           </h1>
           <p className="text-indigo-100 text-sm mt-2 font-medium opacity-90">
-            AI가 도면을 읽고 방 크기를 계산해 줍니다.
+            AI가 도면을 읽고 치수선을 그려줍니다.
           </p>
         </div>
 
@@ -339,10 +440,10 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                AI가 도면을 분석 중입니다...
+                AI가 비율을 계산하여 선을 긋고 있습니다...
               </>
             ) : (
-              "수치 계산 및 도면에 그리기"
+              "수치 역산 및 치수선 그리기"
             )}
           </button>
 
@@ -350,7 +451,7 @@ export default function App() {
             <label className="font-bold text-slate-700 text-lg">
               결과 미리보기
             </label>
-            <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center flex-1 min-h-[250px]">
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden flex items-center justify-center flex-1 min-h-62.5">
               {!imageSrc ? (
                 <div className="text-slate-400 flex flex-col items-center gap-3">
                   <ImageIcon className="w-10 h-10 opacity-50" />
