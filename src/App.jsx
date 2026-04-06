@@ -14,7 +14,7 @@ export default function App() {
   const [base64Data, setBase64Data] = useState(null);
   const [imageMimeType, setImageMimeType] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [segments, setSegments] = useState([]);
+  const [dimensionData, setDimensionData] = useState(null);
   const [error, setError] = useState("");
   const canvasRef = useRef(null);
 
@@ -35,7 +35,7 @@ export default function App() {
       const base64 = dataUrl.split(",")[1];
       setBase64Data(base64);
       setImageMimeType(file.type);
-      setSegments([]);
+      setDimensionData(null);
       setError("");
     };
     reader.readAsDataURL(file);
@@ -75,13 +75,13 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [핵심 변경] 연한 선 무시, 진한 붉은색 외곽선(다각형 테두리)의 각 선분만 찾도록 명령!
+    // [핵심 변경] 선분을 쪼개지 말고, 붉은 선의 '전체 외곽 영역(Bounding Box)' 하나만 찾도록 명령!
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 매우 정밀한 시각적 분석과 수학적 계산이 필요해.\n\n**1단계 (절대 기준 설정):** 도면 하단의 표를 보면 특정 구역(탐구실 등 전체)의 면적이 **"500.01 ㎡"** (또는 도면에 적힌 다른 전체 면적 값)라고 명시되어 있어. 이 전체 면적을 모든 길이를 역산하는 유일한 척도(Scale)로 삼아.\n\n**2단계 (진한 붉은색 외곽선 추적 - 가장 중요!):** 도면 안쪽에 있는 연한 붉은색 가로/세로 격자선들이나 개별 방 이름은 **완전히 무시해!** 오직 도면 전체를 크게 감싸고 있는 **"가장 굵고 진한 붉은색 테두리 선(외곽 다각형)"**만 찾아내. \n\n**3단계 (외곽선 분할 및 좌표 추출):** 그 굵은 붉은색 다각형을 여러 개의 꺾이는 '직선 구간(선분)'들로 쪼개. 각 직선 구간의 시작점(x1, y1)과 끝점(x2, y2) 좌표를 백분율(0~100)로 추출해.\n\n**4단계 (길이 계산 및 방향):** 1단계의 전체 면적(예: 500.01㎡) 대비 픽셀 길이를 바탕으로, 각 붉은색 직선 구간의 실제 길이를 미터(m) 단위 소수점 첫째 자리까지 역산해(예: 17.8). 그리고 이 선분이 도면 중심을 기준으로 바깥쪽으로 어느 방향에 있는지(top, bottom, left, right) 판단해줘. 치수선을 그릴 방향을 정하기 위함이야.`,
+              text: `다음은 건축 평면도 이미지야. 매우 정밀한 시각적 분석과 수학적 계산이 필요해.\n\n**1단계 (절대 기준 설정):** 도면 하단의 표를 보면 특정 구역 전체의 면적이 **"500.01 ㎡"** (또는 도면에 적힌 다른 전체 면적 값)라고 명시되어 있어. 이 면적을 역산의 유일한 척도로 삼아.\n\n**2단계 (전체 외곽 영역 포착 - 가장 중요!):** 붉은색 선들이 지그재그로 꺾이는 복잡한 형태를 개별 선분으로 쪼개지 마! 대신 붉은색 선들이 차지하는 **"가장 바깥쪽 테두리를 모두 감싸는 하나의 거대한 직사각형(Bounding Box)"**을 가상으로 그려내. 이 거대한 직사각형의 가장 왼쪽(x), 위쪽(y) 좌표와 전체 가로 폭(w), 세로 높이(h)를 백분율(0~100)로 추출해.\n\n**3단계 (총 길이 계산):** 1단계의 전체 면적(500.01㎡)을 바탕으로, 2단계에서 구한 '거대한 직사각형'의 실제 **총 가로 길이(Total Width)**와 **총 세로 길이(Total Height)**를 미터(m) 단위 소수점 첫째 자리까지 역산해(예: 41.6m).`,
             },
             {
               inlineData: {
@@ -95,7 +95,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 도면의 굵은 테두리(외곽선)만 추적하여 치수를 계산하는 AI야. 내부의 연한 선이나 개별 방은 무시해. 굵은 붉은 선의 각 직선 구간(Segment)들의 시작/끝 좌표와 역산된 길이를 JSON 배열(Array) 형식으로 출력해. 방향(orientation)은 'horizontal' 또는 'vertical'로, 위치(position)는 치수선을 도면 바깥쪽으로 빼기 위해 도형 중심 기준 바깥 방향('top', 'bottom', 'left', 'right')으로 명시해.",
+            text: "너는 도면의 굵은 붉은색 외곽선이 차지하는 '전체 영역(Bounding Box)'을 하나로 묶어서 파악하는 AI야. 복잡한 선분 쪼개기는 에러를 유발하므로 절대 하지 마. 오직 전체를 감싸는 큰 사각형의 x, y, w, h 비율과 역산된 총 가로(totalWidth), 총 세로(totalHeight) 수치만 JSON 형식으로 출력해.",
           },
         ],
       },
@@ -104,54 +104,36 @@ export default function App() {
         responseSchema: {
           type: "OBJECT",
           properties: {
-            segments: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  lengthText: {
-                    type: "STRING",
-                    description: "역산된 길이 숫자만 (예: 17.8)",
-                  },
-                  orientation: {
-                    type: "STRING",
-                    description: "선의 방향: 'horizontal' 또는 'vertical'",
-                  },
-                  position: {
-                    type: "STRING",
-                    description:
-                      "도형 밖으로 치수선을 뺄 방향: 'top', 'bottom', 'left', 'right'",
-                  },
-                  x1: {
-                    type: "NUMBER",
-                    description: "선분의 시작 X 좌표 백분율 (0-100)",
-                  },
-                  y1: {
-                    type: "NUMBER",
-                    description: "선분의 시작 Y 좌표 백분율 (0-100)",
-                  },
-                  x2: {
-                    type: "NUMBER",
-                    description: "선분의 끝 X 좌표 백분율 (0-100)",
-                  },
-                  y2: {
-                    type: "NUMBER",
-                    description: "선분의 끝 Y 좌표 백분율 (0-100)",
-                  },
-                },
-                required: [
-                  "lengthText",
-                  "orientation",
-                  "position",
-                  "x1",
-                  "y1",
-                  "x2",
-                  "y2",
-                ],
-              },
+            x: {
+              type: "NUMBER",
+              description:
+                "붉은색 전체 영역을 감싸는 사각형의 가장 왼쪽 X 좌표 (0-100)",
+            },
+            y: {
+              type: "NUMBER",
+              description:
+                "붉은색 전체 영역을 감싸는 사각형의 가장 위쪽 Y 좌표 (0-100)",
+            },
+            w: {
+              type: "NUMBER",
+              description:
+                "붉은색 전체 영역을 감싸는 사각형의 총 가로 폭 백분율 (0-100)",
+            },
+            h: {
+              type: "NUMBER",
+              description:
+                "붉은색 전체 영역을 감싸는 사각형의 총 세로 높이 백분율 (0-100)",
+            },
+            totalWidth: {
+              type: "STRING",
+              description: "역산된 총 가로 길이 (예: 41.6)",
+            },
+            totalHeight: {
+              type: "STRING",
+              description: "역산된 총 세로 길이 (예: 12.0)",
             },
           },
-          required: ["segments"],
+          required: ["x", "y", "w", "h", "totalWidth", "totalHeight"],
         },
       },
     };
@@ -176,7 +158,10 @@ export default function App() {
 
         if (responseText) {
           const parsedResult = JSON.parse(responseText);
-          setSegments(parsedResult.segments || []);
+          // 단일 전체 영역 데이터를 상태에 저장
+          if (parsedResult.w && parsedResult.h) {
+            setDimensionData(parsedResult);
+          }
           setIsProcessing(false);
           return;
         } else {
@@ -195,7 +180,7 @@ export default function App() {
     }
   };
 
-  // [핵심 변경 2] 각 외곽선 '선분(Segment)'을 바탕으로 바깥쪽으로 치수선 뻗어 나가게 그리기
+  // [핵심 변경 2] 난잡한 선을 없애고, 전체 영역 바깥에 4개의 완벽한 직선(CAD 치수선)을 그립니다.
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -208,161 +193,153 @@ export default function App() {
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
 
-      if (segments && segments.length > 0) {
-        const fontSize = Math.max(14, Math.floor(canvas.width * 0.012));
-        const strokeWidth = Math.max(2, Math.floor(canvas.width * 0.002));
+      if (dimensionData) {
+        const fontSize = Math.max(16, Math.floor(canvas.width * 0.015));
+        const strokeWidth = Math.max(3, Math.floor(canvas.width * 0.003));
 
-        // 치수선 그리기 함수 (선분 기반 AutoCAD 스타일)
-        const drawSegmentDimension = (segment) => {
+        // AI가 찾아낸 전체 붉은색 영역의 바운딩 박스(Bounding Box) 좌표
+        const left = (dimensionData.x / 100) * canvas.width;
+        const top = (dimensionData.y / 100) * canvas.height;
+        const right = left + (dimensionData.w / 100) * canvas.width;
+        const bottom = top + (dimensionData.h / 100) * canvas.height;
+
+        const box = { left, top, right, bottom };
+
+        // 치수선 그리기 헬퍼 함수
+        const drawOverallDimension = (box, text, position) => {
           ctx.save();
-          ctx.strokeStyle = "#2563eb"; // 선명한 파란색
+          ctx.strokeStyle = "#2563eb";
           ctx.fillStyle = "#2563eb";
           ctx.lineWidth = strokeWidth;
 
-          // 백분율 좌표를 픽셀로 변환
-          let startX = (segment.x1 / 100) * canvas.width;
-          let startY = (segment.y1 / 100) * canvas.height;
-          let endX = (segment.x2 / 100) * canvas.width;
-          let endY = (segment.y2 / 100) * canvas.height;
-
-          // 좌표 정렬 (항상 왼쪽에서 오른쪽, 위에서 아래 방향으로 보정)
-          if (startX > endX) {
-            let temp = startX;
-            startX = endX;
-            endX = temp;
-          }
-          if (startY > endY) {
-            let temp = startY;
-            startY = endY;
-            endY = temp;
-          }
-
-          const offset = Math.max(40, canvas.width * 0.04); // 치수선을 선에서 얼마나 띄울지 (바깥쪽으로)
-          const gap = 5; // 선과 치수보조선 사이 틈
-          const overrun = 10; // 꼬리 길이
-          const tickSize = 6; // 대각선 틱 크기
+          const offset = Math.max(50, canvas.width * 0.05); // 도면 바깥으로 시원하게 빼줍니다.
+          const gap = 10;
+          const overrun = 15;
+          const tickSize = 8;
 
           ctx.beginPath();
 
-          if (segment.orientation === "horizontal") {
-            const y = (startY + endY) / 2; // 평균 Y값 사용 (수평 보정)
-            const isTop = segment.position === "top";
+          if (position === "top" || position === "bottom") {
+            const isTop = position === "top";
+            const yLine = isTop ? box.top - offset : box.bottom + offset;
+            const extStart = isTop ? box.top - gap : box.bottom + gap;
+            const extEnd = isTop ? yLine - overrun : yLine + overrun;
 
-            // 위치가 top이면 위쪽(-), bottom이면 아래쪽(+)으로 치수선을 뺍니다.
-            const direction = isTop ? -1 : 1;
-            const yLine = y + offset * direction;
-            const extStart = y + gap * direction;
-            const extEnd = yLine + overrun * direction;
-
-            // 1. 치수보조선 (세로)
-            ctx.moveTo(startX, extStart);
-            ctx.lineTo(startX, extEnd);
-            ctx.moveTo(endX, extStart);
-            ctx.lineTo(endX, extEnd);
+            // 치수보조선
+            ctx.moveTo(box.left, extStart);
+            ctx.lineTo(box.left, extEnd);
+            ctx.moveTo(box.right, extStart);
+            ctx.lineTo(box.right, extEnd);
             ctx.stroke();
 
-            // 2. 치수선 (가로)
+            // 치수선
             ctx.beginPath();
-            ctx.moveTo(startX, yLine);
-            ctx.lineTo(endX, yLine);
+            ctx.moveTo(box.left, yLine);
+            ctx.lineTo(box.right, yLine);
             ctx.stroke();
 
-            // 3. 까치발
+            // 까치발
             ctx.beginPath();
-            ctx.moveTo(startX - tickSize, yLine + tickSize);
-            ctx.lineTo(startX + tickSize, yLine - tickSize);
-            ctx.moveTo(endX - tickSize, yLine + tickSize);
-            ctx.lineTo(endX + tickSize, yLine - tickSize);
+            ctx.moveTo(box.left - tickSize, yLine + tickSize);
+            ctx.lineTo(box.left + tickSize, yLine - tickSize);
+            ctx.moveTo(box.right - tickSize, yLine + tickSize);
+            ctx.lineTo(box.right + tickSize, yLine - tickSize);
             ctx.stroke();
 
-            // 4. 텍스트
+            // 텍스트
             ctx.textAlign = "center";
-            ctx.textBaseline = isTop ? "bottom" : "top"; // 선 위치에 따라 텍스트 위/아래 결정
+            ctx.textBaseline = isTop ? "bottom" : "top";
             ctx.font = `bold ${fontSize}px sans-serif`;
-            const text = segment.lengthText + "m";
-            const tw = ctx.measureText(text).width;
+            const displayText = `Total W: ${text}m`;
+            const tw = ctx.measureText(displayText).width;
 
-            const textY = isTop ? yLine - 4 : yLine + 4;
-
+            const textY = isTop ? yLine - 8 : yLine + 8;
             ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
             ctx.fillRect(
-              startX + (endX - startX) / 2 - tw / 2 - 4,
-              isTop ? textY - fontSize : textY,
-              tw + 8,
-              fontSize,
+              box.left + (box.right - box.left) / 2 - tw / 2 - 6,
+              isTop ? textY - fontSize - 2 : textY - 2,
+              tw + 12,
+              fontSize + 4,
             );
 
             ctx.fillStyle = "#1e3a8a";
-            ctx.fillText(text, startX + (endX - startX) / 2, textY);
-          } else if (segment.orientation === "vertical") {
-            const x = (startX + endX) / 2; // 평균 X값 사용 (수직 보정)
-            const isLeft = segment.position === "left";
+            ctx.fillText(
+              displayText,
+              box.left + (box.right - box.left) / 2,
+              textY,
+            );
+          } else if (position === "left" || position === "right") {
+            const isLeft = position === "left";
+            const xLine = isLeft ? box.left - offset : box.right + offset;
+            const extStart = isLeft ? box.left - gap : box.right + gap;
+            const extEnd = isLeft ? xLine - overrun : xLine + overrun;
 
-            // 위치가 left면 왼쪽(-), right면 오른쪽(+)으로 치수선을 뺍니다.
-            const direction = isLeft ? -1 : 1;
-            const xLine = x + offset * direction;
-            const extStart = x + gap * direction;
-            const extEnd = xLine + overrun * direction;
-
-            // 1. 치수보조선 (가로)
-            ctx.moveTo(extStart, startY);
-            ctx.lineTo(extEnd, startY);
-            ctx.moveTo(extStart, endY);
-            ctx.lineTo(extEnd, endY);
+            // 치수보조선
+            ctx.moveTo(extStart, box.top);
+            ctx.lineTo(extEnd, box.top);
+            ctx.moveTo(extStart, box.bottom);
+            ctx.lineTo(extEnd, box.bottom);
             ctx.stroke();
 
-            // 2. 치수선 (세로)
+            // 치수선
             ctx.beginPath();
-            ctx.moveTo(xLine, startY);
-            ctx.lineTo(xLine, endY);
+            ctx.moveTo(xLine, box.top);
+            ctx.lineTo(xLine, box.bottom);
             ctx.stroke();
 
-            // 3. 까치발
+            // 까치발
             ctx.beginPath();
-            ctx.moveTo(xLine - tickSize, startY + tickSize);
-            ctx.lineTo(xLine + tickSize, startY - tickSize);
-            ctx.moveTo(xLine - tickSize, endY + tickSize);
-            ctx.lineTo(xLine + tickSize, endY - tickSize);
+            ctx.moveTo(xLine - tickSize, box.top + tickSize);
+            ctx.lineTo(xLine + tickSize, box.top - tickSize);
+            ctx.moveTo(xLine - tickSize, box.bottom + tickSize);
+            ctx.lineTo(xLine + tickSize, box.bottom - tickSize);
             ctx.stroke();
 
-            // 4. 텍스트 (정방향으로 읽기 쉽게)
+            // 텍스트
             ctx.textAlign = isLeft ? "right" : "left";
             ctx.textBaseline = "middle";
             ctx.font = `bold ${fontSize}px sans-serif`;
-            const text = segment.lengthText + "m";
-            const tw = ctx.measureText(text).width;
+            const displayText = `Total H: ${text}m`;
+            const tw = ctx.measureText(displayText).width;
 
-            const textX = isLeft ? xLine - 6 : xLine + 6;
-
+            const textX = isLeft ? xLine - 10 : xLine + 10;
             ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
             ctx.fillRect(
-              isLeft ? textX - tw - 4 : textX - 4,
-              startY + (endY - startY) / 2 - fontSize / 2,
-              tw + 8,
-              fontSize,
+              isLeft ? textX - tw - 6 : textX - 6,
+              box.top + (box.bottom - box.top) / 2 - fontSize / 2 - 2,
+              tw + 12,
+              fontSize + 4,
             );
 
             ctx.fillStyle = "#1e3a8a";
-            ctx.fillText(text, textX, startY + (endY - startY) / 2);
+            ctx.fillText(
+              displayText,
+              textX,
+              box.top + (box.bottom - box.top) / 2,
+            );
           }
           ctx.restore();
         };
 
-        segments.forEach((segment) => {
-          if (segment.lengthText) {
-            drawSegmentDimension(segment);
-          }
-        });
+        // 전체 영역을 감싸는 상하좌우 4면에 깔끔하게 치수선을 그립니다.
+        if (dimensionData.totalWidth) {
+          drawOverallDimension(box, dimensionData.totalWidth, "top");
+          drawOverallDimension(box, dimensionData.totalWidth, "bottom");
+        }
+        if (dimensionData.totalHeight) {
+          drawOverallDimension(box, dimensionData.totalHeight, "left");
+          drawOverallDimension(box, dimensionData.totalHeight, "right");
+        }
       }
     };
     img.src = imageSrc;
-  }, [imageSrc, segments]);
+  }, [imageSrc, dimensionData]);
 
   const downloadImage = () => {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = "평면도_외곽치수완성.png";
+    link.download = "평면도_전체외곽치수.png";
     link.href = dataUrl;
     link.click();
   };
@@ -376,7 +353,7 @@ export default function App() {
             도면 수치 자동 입력기
           </h1>
           <p className="text-indigo-100 text-sm mt-2 font-medium opacity-90">
-            외곽선(진한 붉은선) 추출 및 면적 기반 역산 표기
+            전체 외곽 영역(Bounding Box) 면적 역산 표기
           </p>
         </div>
 
@@ -423,10 +400,10 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                외곽선을 추적하고 수치를 역산 중입니다...
+                전체 외곽 영역의 치수를 역산 중입니다...
               </>
             ) : (
-              "외곽선 치수 계산 및 그리기"
+              "전체 외곽 치수 계산 및 그리기"
             )}
           </button>
 
@@ -453,7 +430,7 @@ export default function App() {
             </div>
           </div>
 
-          {segments.length > 0 && (
+          {dimensionData && (
             <button
               onClick={downloadImage}
               className="mt-2 w-full py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors duration-300 shadow-md"
