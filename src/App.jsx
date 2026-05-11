@@ -44,15 +44,20 @@ export default function App() {
     
     // API(Application Programming Interface - 프로그램 연결 통로) 키 자동 적용
     let apiKey = ""; 
+    // 우측 미리보기(Canvas) 환경을 위한 전용 내부 모델
+    let modelName = "gemini-2.5-flash-preview-09-2025"; 
+
     try {
       if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        // 🚀 [404 에러 해결 핵심] 버셀(Vercel) 배포 환경(실제 API 키 사용)에서는 누구나 쓸 수 있는 강력한 범용 모델로 자동 전환!
+        modelName = "gemini-1.5-pro"; 
       }
     } catch (e) {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     // [어제 완성한 최종 프롬프트] 치수보조선은 기본적으로 '굵은 빨간선(규칙 1)'에서만, 예외적으로 '검은 실선(규칙 2)'에서만 나옴을 명확히 강조!
     const payload = {
@@ -133,7 +138,7 @@ export default function App() {
         }
       } catch (err) {
         if (attempt === delays.length) {
-          setError("오류가 발생했습니다. " + err.message);
+          setError("오류가 발생했습니다. 상태 코드: " + (err.message.includes('404') ? '404 (모델 접근 권한 없음)' : err.message));
           setIsProcessing(false);
           return;
         }
