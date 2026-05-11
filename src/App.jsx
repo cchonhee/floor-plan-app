@@ -42,16 +42,18 @@ export default function App() {
     setIsProcessing(true);
     setError("");
     
-    // API(Application Programming Interface - 프로그램 연결 통로) 키 자동 적용
+    // API 키 및 모델 설정 로직 강화
     let apiKey = ""; 
-    // 우측 미리보기(Canvas) 환경을 위한 전용 내부 모델
-    let modelName = "gemini-2.5-flash-preview-09-2025"; 
+    // Vercel 등 실제 인터넷 배포 환경에서 사용할 강력한 범용 모델 기본값
+    let modelName = "gemini-1.5-pro"; 
 
     try {
       if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+        // Vercel 환경 변수가 정상적으로 들어왔을 때
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        // 🚀 [404 에러 해결 핵심] 버셀(Vercel) 배포 환경(실제 API 키 사용)에서는 누구나 쓸 수 있는 강력한 범용 모델로 자동 전환!
-        modelName = "gemini-1.5-pro"; 
+      } else {
+        // API 키가 없다면 우측 캔버스(미리보기) 테스트 환경으로 간주하고 내부 모델로 전환
+        modelName = "gemini-2.5-flash-preview-09-2025"; 
       }
     } catch (e) {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
@@ -59,7 +61,6 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
-    // [어제 완성한 최종 프롬프트] 치수보조선은 기본적으로 '굵은 빨간선(규칙 1)'에서만, 예외적으로 '검은 실선(규칙 2)'에서만 나옴을 명확히 강조!
     const payload = {
       contents: [{
         parts: [
@@ -68,7 +69,7 @@ export default function App() {
         ]
       }],
       systemInstruction: {
-        parts: [{ text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 빨간색 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation - 자바스크립트 객체 표기법)으로 출력해." }]
+        parts: [{ text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 빨간색 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation)으로 출력해." }]
       },
       generationConfig: {
         responseMimeType: "application/json",
@@ -138,7 +139,14 @@ export default function App() {
         }
       } catch (err) {
         if (attempt === delays.length) {
-          setError("오류가 발생했습니다. 상태 코드: " + (err.message.includes('404') ? '404 (모델 접근 권한 없음)' : err.message));
+          // 🚀 [에러 메시지 상세화] 어떤 에러인지 명확하게 알려주도록 개선했습니다.
+          let errorMsg = err.message;
+          if (err.message.includes('404')) {
+            errorMsg = "404 에러: API 키가 버셀(Vercel)에 제대로 적용되지 않았습니다. VITE_GEMINI_API_KEY 환경변수 설정 후 반드시 Vercel에서 'Redeploy(재배포)'를 해주세요!";
+          } else if (err.message.includes('403') || err.message.includes('400')) {
+            errorMsg = "403/400 에러: API 키가 유효하지 않습니다. 구글 AI Studio에서 생성한 키가 맞는지 확인해주세요.";
+          }
+          setError("오류가 발생했습니다. " + errorMsg);
           setIsProcessing(false);
           return;
         }
@@ -161,8 +169,6 @@ export default function App() {
 
       if (analysisResult && analysisResult.plans) {
         const fontSize = Math.max(13, Math.floor(canvas.width * 0.012)); 
-        
-        // [충돌 방지 로직] 이미 그려진 텍스트 박스들의 영역을 기억하는 배열
         const drawnTextBoxes = [];
 
         const checkCollision = (box1) => {
@@ -183,7 +189,6 @@ export default function App() {
           const bbPixelArea = pxTotalW * pxTotalH;
           const bbRealArea = plan.area / fillFactor;
           
-          // 절대 축척 적용 (가로세로 비율 왜곡 방지)
           const uniformScale = Math.sqrt(bbRealArea / bbPixelArea);
 
           plan.segments.forEach((seg) => {
@@ -205,7 +210,6 @@ export default function App() {
             const pxLen = seg.orientation === 'horizontal' ? Math.abs(pxX2 - pxX1) : Math.abs(pxY2 - pxY1);
             const realLength = pxLen * uniformScale;
             
-            // 짧은 노이즈 무시
             if(realLength < 0.1) return; 
 
             const prefix = seg.orientation === 'horizontal' ? 'W: ' : 'H: ';
@@ -214,15 +218,13 @@ export default function App() {
             const cx = (pxX1 + pxX2) / 2;
             const cy = (pxY1 + pxY2) / 2;
 
-            // 치수선이 굵은 빨간색 실선(측정 객체)에 가깝게 붙도록 오프셋 유지
             const offset = Math.max(18, canvas.width * 0.018); 
-            // 틈(gap)이 0이므로 치수보조선은 측정 객체에서 바로 시작됨
             const gap = 0; 
-            const overrun = 10; // 치수 연장선
+            const overrun = 10; 
             const tickSize = 5; 
 
             ctx.save();
-            const drawColor = "#2563eb"; // 선명한 파란색
+            const drawColor = "#2563eb"; 
             ctx.strokeStyle = drawColor; 
             ctx.fillStyle = drawColor;
             ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
@@ -239,24 +241,20 @@ export default function App() {
               const extStart = isTop ? cy - gap : cy + gap; 
               const extEnd = isTop ? yLine - overrun : yLine + overrun;
 
-              // 1. 치수보조선 (파란색)
               ctx.beginPath();
               ctx.moveTo(pxX1, extStart); ctx.lineTo(pxX1, extEnd);
               ctx.moveTo(pxX2, extStart); ctx.lineTo(pxX2, extEnd);
               ctx.stroke();
 
-              // 2. 치수선 (파란색)
               ctx.beginPath();
               ctx.moveTo(pxX1, yLine); ctx.lineTo(pxX2, yLine);
               ctx.stroke();
 
-              // 3. 화살표 대신 사용하는 까치발 (파란색)
               ctx.beginPath();
               ctx.moveTo(pxX1 - tickSize, yLine + tickSize); ctx.lineTo(pxX1 + tickSize, yLine - tickSize);
               ctx.moveTo(pxX2 - tickSize, yLine + tickSize); ctx.lineTo(pxX2 + tickSize, yLine - tickSize);
               ctx.stroke();
 
-              // 4. 치수 문자 (충돌 감지 및 지시선 적용)
               let textY = isTop ? yLine - fontSize * 0.8 : yLine + fontSize * 0.8;
               let box = {
                 left: cx - tw/2 - 6, right: cx + tw/2 + 6,
@@ -272,7 +270,6 @@ export default function App() {
               }
               drawnTextBoxes.push(box);
 
-              // 5. 지시선 (밀려난 경우 점선 생성)
               if (shiftCount > 0) {
                 const originalTextY = isTop ? yLine - fontSize * 0.8 : yLine + fontSize * 0.8;
                 ctx.beginPath();
@@ -285,7 +282,6 @@ export default function App() {
                 ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
               }
 
-              // 텍스트 배경 및 글씨 출력
               ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
               ctx.fillRect(box.left, box.top, box.right - box.left, box.bottom - box.top);
               
@@ -293,31 +289,26 @@ export default function App() {
               ctx.fillText(text, cx, textY);
 
             } else {
-              // 세로 방향 (vertical)
               const isLeft = seg.position === 'left';
               
               const xLine = isLeft ? cx - offset : cx + offset;
               const extStart = isLeft ? cx - gap : cx + gap;
               const extEnd = isLeft ? xLine - overrun : xLine + overrun;
 
-              // 1. 치수보조선
               ctx.beginPath();
               ctx.moveTo(extStart, pxY1); ctx.lineTo(extEnd, pxY1);
               ctx.moveTo(extStart, pxY2); ctx.lineTo(extEnd, pxY2);
               ctx.stroke();
 
-              // 2. 치수선
               ctx.beginPath();
               ctx.moveTo(xLine, pxY1); ctx.lineTo(xLine, pxY2);
               ctx.stroke();
 
-              // 3. 까치발
               ctx.beginPath();
               ctx.moveTo(xLine - tickSize, pxY1 + tickSize); ctx.lineTo(xLine + tickSize, pxY1 - tickSize);
               ctx.moveTo(xLine - tickSize, pxY2 + tickSize); ctx.lineTo(xLine + tickSize, pxY2 - tickSize);
               ctx.stroke();
 
-              // 4. 치수 문자 (충돌 방지)
               let textX = isLeft ? xLine - tw/2 - 8 : xLine + tw/2 + 8;
               let box = {
                 left: textX - tw/2 - 6, right: textX + tw/2 + 6,
@@ -333,7 +324,6 @@ export default function App() {
               }
               drawnTextBoxes.push(box);
 
-              // 5. 지시선
               if (shiftCount > 0) {
                 const originalTextX = isLeft ? xLine - tw/2 - 8 : xLine + tw/2 + 8;
                 ctx.beginPath();
