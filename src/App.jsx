@@ -27,6 +27,7 @@ export default function App() {
       const base64 = dataUrl.split(',')[1];
       setBase64Data(base64);
       setImageMimeType(file.type);
+      // 새 이미지를 업로드하면 기존 결과를 초기화하여 분석 버튼을 다시 활성화합니다.
       setAnalysisResult(null); 
       setError("");
     };
@@ -42,21 +43,21 @@ export default function App() {
     setIsProcessing(true);
     setError("");
     
-    // API 키 및 모델 설정 로직
-    let apiKey = ""; 
-    let modelName = "gemini-1.5-flash"; 
+    // Vercel(버셀) 환경 변수 자동 적용 및 우측 캔버스(미리보기) 테스트 환경 대응
+    let finalApiKey = ""; 
+    let modelName = "gemini-2.5-flash-preview-09-2025"; // 우측 캔버스용 기본 모델
 
     try {
+      // VITE(비트 - 프론트엔드 빌드 도구) 환경 변수가 존재하면 Vercel 배포 환경으로 인식
       if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      } else {
-        modelName = "gemini-2.5-flash-preview-09-2025"; 
+        finalApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        modelName = "gemini-1.5-flash"; // 실제 서비스용 빠르고 강력한 범용 모델
       }
     } catch (e) {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${finalApiKey}`;
 
     // [업데이트] 빨간색뿐만 아니라 분홍색/마젠타색 테두리도 정확히 인식하도록 프롬프트 강화
     const payload = {
@@ -138,10 +139,10 @@ export default function App() {
       } catch (err) {
         if (attempt === delays.length) {
           let errorMsg = err.message;
-          if (err.message.includes('404')) {
-            errorMsg = "404 에러: API 키가 여전히 적용되지 않았습니다. Vercel 빌드 캐시를 우회하기 위해 터미널에서 코드를 다시 커밋/푸시해주세요.";
-          } else if (err.message.includes('403') || err.message.includes('400')) {
-            errorMsg = "403/400 에러: API 키가 유효하지 않습니다. 구글 AI Studio에서 생성한 키가 맞는지 확인해주세요.";
+          if (err.message.includes('404') || err.message.includes('400')) {
+            errorMsg = "API(응용 프로그램 프로그래밍 인터페이스) 키가 적용되지 않았습니다. 버셀(Vercel)에서 재배포를 확인해주세요.";
+          } else if (err.message.includes('403')) {
+            errorMsg = "403 에러: 등록된 API 키가 유효하지 않습니다. 구글 클라우드에서 확인해 주세요.";
           }
           setError("오류가 발생했습니다. " + errorMsg);
           setIsProcessing(false);
@@ -356,6 +357,9 @@ export default function App() {
     link.click();
   };
 
+  // 분석 버튼 비활성화 조건: 이미지가 없거나, 분석 중이거나, 이미 결과가 나왔을 때
+  const isButtonDisabled = !imageSrc || isProcessing || analysisResult !== null;
+
   return (
     <div className="min-h-screen bg-zinc-50 font-sans p-4 sm:p-8 flex justify-center items-start">
       <div className="w-full max-w-2xl bg-white rounded-3xl border border-zinc-200/60 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col min-h-[85vh]">
@@ -366,7 +370,7 @@ export default function App() {
             방별 외곽 벽면 치수 계산기
           </h1>
           <p className="text-zinc-500 text-sm mt-2.5 font-medium leading-relaxed">
-            측정 객체(붉은선/마젠타선)와 기점 규칙을 엄격히 통제합니다.
+            측정 객체(굵은 빨간선)와 기점 규칙(코너 및 검은 벽체 예외)을 엄격히 통제합니다.
           </p>
         </div>
 
@@ -400,11 +404,11 @@ export default function App() {
 
           <button 
             onClick={analyzeImage}
-            disabled={!imageSrc || isProcessing}
-            className={`w-full py-4 rounded-xl font-semibold text-white flex items-center justify-center gap-2 transition-all duration-200 ${
-              (!imageSrc || isProcessing) 
+            disabled={isButtonDisabled}
+            className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all duration-200 ${
+              isButtonDisabled 
                 ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' 
-                : 'bg-zinc-900 hover:bg-zinc-800 shadow-md hover:shadow-lg hover:-translate-y-0.5'
+                : 'bg-zinc-900 text-white hover:bg-zinc-800 shadow-md hover:shadow-lg hover:-translate-y-0.5'
             }`}
           >
             {isProcessing ? (
@@ -412,8 +416,10 @@ export default function App() {
                 <Loader2 className="w-5 h-5 animate-spin" />
                 오직 굵은 붉은색(마젠타 포함) 선을 규칙에 따라 분석 중...
               </>
+            ) : analysisResult ? (
+              '✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)'
             ) : (
-              '각 방별 외곽 벽면 길이 계산 및 그리기'
+              '2. 각 방별 외곽 벽면 길이 계산 및 그리기'
             )}
           </button>
 
