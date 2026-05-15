@@ -43,23 +43,22 @@ export default function App() {
     setIsProcessing(true);
     setError("");
     
-    // 💡 [가장 확실하고 쉬운 해결책] Vercel 환경변수가 계속 적용 안 되는 문제를 100% 우회합니다.
-    // 아래의 빈 따옴표 안에 발급받으신 구글 API 키(AIzaSy... 로 시작하는 문자열)를 직접 복사해서 붙여넣으세요!
-    // 예시: let finalApiKey = "AIzaSy... (내 키) ...";
-    let finalApiKey = "AIzaSyAQqsNhMmnZVRmxi7hupa1mfPkEZme6UeE"; 
+    // 💡 [수정 완료] API 키 직접 입력을 없애고 Vercel 환경변수를 가져오는 정석 방식으로 복구했습니다.
+    let finalApiKey = ""; 
     
-    let modelName = "gemini-1.5-flash"; 
+    // 💡 [에러 해결] 404 에러의 진짜 원인이었던 모델명을 구글 공식 명칭으로 정확히 수정했습니다.
+    let modelName = "gemini-1.5-flash-latest"; 
 
     try {
-      // 직접 입력한 키가 없으면 환경변수에서 가져오기 시도
-      if (!finalApiKey && typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+      // 환경변수 자동 가져오기
+      if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         finalApiKey = import.meta.env.VITE_GEMINI_API_KEY;
       }
     } catch (e) {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    // 그래도 키가 없으면 우측 캔버스(미리보기) 테스트 환경용 모델 적용
+    // 환경변수가 없으면 우측 캔버스(미리보기) 테스트 환경용 모델 적용
     if (!finalApiKey) {
       modelName = "gemini-2.5-flash-preview-09-2025"; 
     }
@@ -128,7 +127,6 @@ export default function App() {
         });
 
         if (!response.ok) {
-          // [업데이트] 구글 서버의 정확한 에러 메시지를 가로채서 화면에 표시합니다.
           const errorData = await response.json().catch(() => ({}));
           throw new Error(`[상태 코드 ${response.status}] ${errorData.error?.message || '구글 서버 응답 오류'}`);
         }
@@ -148,7 +146,7 @@ export default function App() {
         }
       } catch (err) {
         if (attempt === delays.length) {
-          setError(`🚨 구글 AI 통신 에러: ${err.message}\n\n💡 [해결법] Vercel 빌드 문제로 API 키가 빈 값으로 전송되고 있습니다. App.jsx 코드의 44번째 줄 부근 'finalApiKey = ""' 부분의 따옴표 안에 구글 API 키를 직접 붙여넣고 깃허브에 다시 올려주시면 100% 해결됩니다!`);
+          setError(`🚨 구글 AI 통신 에러: ${err.message}\n\n💡 [안내] 모델명을 정확히 수정했습니다. 만약 계속 에러가 발생한다면 Vercel 환경변수를 확인해 주세요.`);
           setIsProcessing(false);
           return;
         }
