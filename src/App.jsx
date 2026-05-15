@@ -42,17 +42,14 @@ export default function App() {
     setIsProcessing(true);
     setError("");
     
-    // API 키 및 모델 설정 로직 강화
+    // API 키 및 모델 설정 로직
     let apiKey = ""; 
-    // Vercel 등 실제 인터넷 배포 환경에서 사용할 강력한 범용 모델 기본값
-    let modelName = "gemini-1.5-pro"; 
+    let modelName = "gemini-1.5-flash"; 
 
     try {
       if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-        // Vercel 환경 변수가 정상적으로 들어왔을 때
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       } else {
-        // API 키가 없다면 우측 캔버스(미리보기) 테스트 환경으로 간주하고 내부 모델로 전환
         modelName = "gemini-2.5-flash-preview-09-2025"; 
       }
     } catch (e) {
@@ -61,15 +58,16 @@ export default function App() {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
+    // [업데이트] 빨간색뿐만 아니라 분홍색/마젠타색 테두리도 정확히 인식하도록 프롬프트 강화
     const payload = {
       contents: [{
         parts: [
-          { text: `다음은 건축 평면도 이미지야. 다중 도면(여러 층)을 모두 찾아 독립적으로 분석해.\n\n**[앱의 궁극적 목적 및 측정 객체(Measurement Object) 정의]**\n건축 CAD(Computer-Aided Design - 컴퓨터 지원 설계) 표준에서 '측정 객체'란 치수를 잴 대상을 말해. 이 도면에서 너의 유일한 측정 객체는 **"가는 빨간색 실선으로 채워진 방을 감싸고 있는 '굵은 빨간색 실선'"**이야.\n\n**치수보조선은 오직 이 '굵은 빨간색 실선' 위에서만 시작되어야 해!** 단, 방별로 벽 길이를 따로 재기 위해 이 굵은 빨간선은 다음 두 가지 엄격한 기점 규칙에 의해서만 여러 개의 선분 조각으로 쪼개져야 해.\n\n[기점 규칙 1 - 기본] 굵은 빨간선이 꺾이는 부분(방의 코너): 치수보조선은 반드시 "굵은 빨간색 실선의 정가운데(두께 중심)"에서 나온다.\n[기점 규칙 2 - 예외] 방과 방을 나누는 검은색 실선 교차점: 굵은 빨간선이 일직선이더라도, 교실이나 음악실 등 방과 방을 나누는 '검은색 실선(또는 겹쳐진 실선)'과 굵은 빨간선이 직각으로 만난다면 무조건 잘라야 해! 이때는 예외적으로 그 "검은색 실선의 정가운데(두께 중심)"에서 치수보조선이 나온다.\n\n**[절대 금지 사항]**: 규칙 1과 규칙 2에 해당하지 않는 장소(복도, 가는 빨간선 위, 텅 빈 허공 등)에서는 절대로 치수보조선을 뽑지 마!\n\n**1단계 (면적 & 비율):** 평면도별 기준 면적(area), 거대 직사각형 가로/세로 백분율(totalW, totalH), 실제 붉은 구역이 꽉 찬 비율(fillFactor) 추출.\n\n**2단계 (측정 객체 분할 추출):** 위 목적과 기점 규칙에 따라 쪼개진 각 '측정 객체(굵은 빨간색 선분 조각)'에 대해 다음을 추출해.\n- orientation: ('horizontal' 또는 'vertical')\n- position: 도면 바깥 방향 ('top', 'bottom', 'left', 'right')\n- x1, y1: 쪼개진 측정 객체의 시작 기점 좌표 백분율 (반드시 규칙 1, 2에 해당하는 픽셀 위치)\n- x2, y2: 쪼개진 측정 객체의 끝 기점 좌표 백분율 (반드시 규칙 1, 2에 해당하는 픽셀 위치)` },
+          { text: `다음은 건축 평면도 이미지야. 다중 도면(여러 층)을 모두 찾아 독립적으로 분석해.\n\n**[앱의 궁극적 목적 및 측정 객체(Measurement Object) 정의]**\n건축 CAD(Computer-Aided Design - 컴퓨터 지원 설계) 표준에서 '측정 객체'란 치수를 잴 대상을 말해. 이 도면에서 너의 유일한 측정 객체는 **"가는 붉은색 실선으로 채워진 방을 감싸고 있는 '굵은 붉은색 계열(빨강, 분홍, 마젠타 등) 실선'"**이야.\n\n**치수보조선은 오직 이 '굵은 붉은색 실선' 위에서만 시작되어야 해!** 단, 방별로 벽 길이를 따로 재기 위해 이 굵은 선은 다음 두 가지 엄격한 기점 규칙에 의해서만 여러 개의 선분 조각으로 쪼개져야 해.\n\n[기점 규칙 1 - 기본] 굵은 붉은선이 꺾이는 부분(방의 코너): 치수보조선은 반드시 "굵은 붉은선의 정가운데(두께 중심)"에서 나온다.\n[기점 규칙 2 - 예외] 방과 방을 나누는 검은색 실선 교차점: 굵은 붉은선이 일직선이더라도, 교실이나 음악실 등 방과 방을 나누는 '검은색 실선(또는 겹쳐진 실선)'과 굵은 붉은선이 직각으로 만난다면 무조건 잘라야 해! 이때는 예외적으로 그 "검은색 실선의 정가운데(두께 중심)"에서 치수보조선이 나온다.\n\n**[절대 금지 사항]**: 규칙 1과 규칙 2에 해당하지 않는 장소(복도, 가는 붉은선 위, 텅 빈 허공 등)에서는 절대로 치수보조선을 뽑지 마!\n\n**1단계 (면적 & 비율):** 평면도별 기준 면적(area), 거대 직사각형 가로/세로 백분율(totalW, totalH), 실제 붉은 구역이 꽉 찬 비율(fillFactor) 추출.\n\n**2단계 (측정 객체 분할 추출):** 위 목적과 기점 규칙에 따라 쪼개진 각 '측정 객체(굵은 붉은색 선분 조각)'에 대해 다음을 추출해.\n- orientation: ('horizontal' 또는 'vertical')\n- position: 도면 바깥 방향 ('top', 'bottom', 'left', 'right')\n- x1, y1: 쪼개진 측정 객체의 시작 기점 좌표 백분율 (반드시 규칙 1, 2에 해당하는 픽셀 위치)\n- x2, y2: 쪼개진 측정 객체의 끝 기점 좌표 백분율 (반드시 규칙 1, 2에 해당하는 픽셀 위치)` },
           { inlineData: { mimeType: imageMimeType || "image/jpeg", data: base64Data } }
         ]
       }],
       systemInstruction: {
-        parts: [{ text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 빨간색 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation)으로 출력해." }]
+        parts: [{ text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 붉은색(마젠타 포함) 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation)으로 출력해." }]
       },
       generationConfig: {
         responseMimeType: "application/json",
@@ -93,10 +91,10 @@ export default function App() {
                       properties: {
                         orientation: { type: "STRING" },
                         position: { type: "STRING" },
-                        x1: { type: "NUMBER", description: "측정 객체(굵은 빨간선)의 시작 기점 X 좌표 (반드시 규칙 1, 2 위치)" },
-                        y1: { type: "NUMBER", description: "측정 객체(굵은 빨간선)의 시작 기점 Y 좌표 (반드시 규칙 1, 2 위치)" },
-                        x2: { type: "NUMBER", description: "측정 객체(굵은 빨간선)의 끝 기점 X 좌표 (반드시 규칙 1, 2 위치)" },
-                        y2: { type: "NUMBER", description: "측정 객체(굵은 빨간선)의 끝 기점 Y 좌표 (반드시 규칙 1, 2 위치)" }
+                        x1: { type: "NUMBER", description: "측정 객체(굵은 붉은선)의 시작 기점 X 좌표 (반드시 규칙 1, 2 위치)" },
+                        y1: { type: "NUMBER", description: "측정 객체(굵은 붉은선)의 시작 기점 Y 좌표 (반드시 규칙 1, 2 위치)" },
+                        x2: { type: "NUMBER", description: "측정 객체(굵은 붉은선)의 끝 기점 X 좌표 (반드시 규칙 1, 2 위치)" },
+                        y2: { type: "NUMBER", description: "측정 객체(굵은 붉은선)의 끝 기점 Y 좌표 (반드시 규칙 1, 2 위치)" }
                       },
                       required: ["orientation", "position", "x1", "y1", "x2", "y2"]
                     }
@@ -139,10 +137,9 @@ export default function App() {
         }
       } catch (err) {
         if (attempt === delays.length) {
-          // 🚀 [에러 메시지 상세화] 어떤 에러인지 명확하게 알려주도록 개선했습니다.
           let errorMsg = err.message;
           if (err.message.includes('404')) {
-            errorMsg = "404 에러: API 키가 버셀(Vercel)에 제대로 적용되지 않았습니다. VITE_GEMINI_API_KEY 환경변수 설정 후 반드시 Vercel에서 'Redeploy(재배포)'를 해주세요!";
+            errorMsg = "404 에러: API 키가 여전히 적용되지 않았습니다. Vercel 빌드 캐시를 우회하기 위해 터미널에서 코드를 다시 커밋/푸시해주세요.";
           } else if (err.message.includes('403') || err.message.includes('400')) {
             errorMsg = "403/400 에러: API 키가 유효하지 않습니다. 구글 AI Studio에서 생성한 키가 맞는지 확인해주세요.";
           }
@@ -369,7 +366,7 @@ export default function App() {
             방별 외곽 벽면 치수 계산기
           </h1>
           <p className="text-zinc-500 text-sm mt-2.5 font-medium leading-relaxed">
-            측정 객체(굵은 빨간선)와 기점 규칙(코너 및 검은 벽체 예외)을 엄격히 통제합니다.
+            측정 객체(붉은선/마젠타선)와 기점 규칙을 엄격히 통제합니다.
           </p>
         </div>
 
@@ -413,7 +410,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                오직 굵은 빨간선을 규칙에 따라 정밀 분석 중...
+                오직 굵은 붉은색(마젠타 포함) 선을 규칙에 따라 분석 중...
               </>
             ) : (
               '각 방별 외곽 벽면 길이 계산 및 그리기'
