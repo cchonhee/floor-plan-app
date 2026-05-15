@@ -43,14 +43,15 @@ export default function App() {
     setIsProcessing(true);
     setError("");
     
-    // 💡 [수정 완료] API 키 직접 입력을 없애고 Vercel 환경변수를 가져오는 정석 방식으로 복구했습니다.
+    // 💡 API(Application Programming Interface - 응용 프로그램 프로그래밍 인터페이스, 프로그램 간의 연결 통로) 키 
+    // 직접 입력을 없애고 Vercel(버셀 - 웹 호스팅 서비스) 환경 변수를 가져오는 정석 방식으로 복구했습니다.
     let finalApiKey = ""; 
     
-    // 💡 [에러 해결] 404 에러의 진짜 원인이었던 모델명을 구글 공식 명칭으로 정확히 수정했습니다.
-    let modelName = "gemini-1.5-flash-latest"; 
+    // 💡 [유료 모델 적용] 빠르고 가벼운 무료 모델(Flash) 대신, 최고 성능을 자랑하는 정밀한 유료 모델(Pro)로 업그레이드했습니다.
+    let modelName = "gemini-1.5-pro"; 
 
     try {
-      // 환경변수 자동 가져오기
+      // 환경 변수 자동 가져오기
       if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         finalApiKey = import.meta.env.VITE_GEMINI_API_KEY;
       }
@@ -58,7 +59,7 @@ export default function App() {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    // 환경변수가 없으면 우측 캔버스(미리보기) 테스트 환경용 모델 적용
+    // 환경 변수가 없으면 우측 캔버스(미리보기) 테스트 환경용 모델 적용
     if (!finalApiKey) {
       modelName = "gemini-2.5-flash-preview-09-2025"; 
     }
@@ -73,7 +74,7 @@ export default function App() {
         ]
       }],
       systemInstruction: {
-        parts: [{ text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 붉은색(마젠타 포함) 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation)으로 출력해." }]
+        parts: [{ text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 붉은색(마젠타 포함) 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation - 자바스크립트 객체 표기법)으로 출력해." }]
       },
       generationConfig: {
         responseMimeType: "application/json",
@@ -146,7 +147,7 @@ export default function App() {
         }
       } catch (err) {
         if (attempt === delays.length) {
-          setError(`🚨 구글 AI 통신 에러: ${err.message}\n\n💡 [안내] 모델명을 정확히 수정했습니다. 만약 계속 에러가 발생한다면 Vercel 환경변수를 확인해 주세요.`);
+          setError(`🚨 구글 AI 통신 에러: ${err.message}\n\n💡 [안내] 모델을 최고급 유료 모델(gemini-1.5-pro)로 수정했습니다. 만약 계속 에러가 발생한다면 Vercel(버셀) 환경 변수를 다시 한번 확인해 주세요.`);
           setIsProcessing(false);
           return;
         }
@@ -416,7 +417,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                오직 굵은 붉은색(마젠타 포함) 선을 규칙에 따라 분석 중...
+                최고급 유료 모델(Pro)로 도면을 정밀 분석 중...
               </>
             ) : analysisResult ? (
               '✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)'
