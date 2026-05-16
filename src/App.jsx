@@ -65,21 +65,13 @@ export default function App() {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    if (!finalApiKey) {
-      setError(
-        "API 키가 없습니다. 버셀(Vercel) 환경 변수 세팅을 확인해 주세요.",
-      );
-      setIsProcessing(false);
-      return;
-    }
-
-    // 💡 [핵심 업데이트] AI의 환각을 막기 위해 16개 좌표 대신, 선 중앙을 관통하는 4개(xMin, xMax, yMin, yMax)의 사각형 박스 좌표만 추출하도록 프롬프트를 전면 수정했습니다.
+    // 💡 [프롬프트 강력 조치] 구형 AI가 도면 전체를 하나의 큰 방으로 묶어버리는 환각 증상을 막기 위해 강력한 경고 추가
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 다중 도면이 있다면 모두 독립적으로 분석해.\n\n**[앱의 핵심 목적]**\n방을 둘러싼 붉은선(외곽선)과 검은선(내부 구획선)의 길이 수치를 표시해야 해. 치수보조선은 반드시 선이 꺾이는 모서리에서부터 시작해야 해.\n\n**[공간 식별 및 기점(좌표) 추출 규칙 (매우 중요!)]**\n1. 공간 식별: 굵은 붉은선(마젠타선)으로 감싸인 영역 내부가 검은색 선(한 줄, 두 줄, 진한 줄 등)으로 구획되어 있다면, 각각을 독립된 '방'으로 취급해. ("송백실", "음악실" 등)\n2. 좌표 추출 원칙: 각 방을 완벽하게 감싸는 사각형 박스의 최소/최대 좌표(xMin, xMax, yMin, yMax)를 추출해. \n   - 이 좌표점들은 반드시 외곽 '붉은선' 또는 구획을 나누는 '검은선'이 꺾이거나 교차하는 모서리(Corner)를 정확히 가리켜야 해.\n   - 허공이 아니라, 반드시 그 **'선의 두께 정가운데(중심)'** 픽셀 위치를 0~100 백분율로 지정해.\n\n**[출력 요구사항]**\n식별된 모든 방에 대해 다음 데이터를 추출해:\n- roomName: 방 이름 (예: "송백실")\n- wText: 가로 길이 수치 (도면에 적힌 치수를 바탕으로 수학적으로 추정해, N/A 금지. 예: "W: 8.0m")\n- hText: 세로 길이 수치 (예: "H: 6.5m")\n- xMin: 방의 왼쪽 벽면 중심 X 좌표 (백분율)\n- xMax: 방의 오른쪽 벽면 중심 X 좌표 (백분율)\n- yMin: 방의 위쪽 벽면 중심 Y 좌표 (백분율)\n- yMax: 방의 아래쪽 벽면 중심 Y 좌표 (백분율)`,
+              text: `다음은 건축 평면도 이미지야. 다중 도면이 있다면 모두 독립적으로 분석해.\n\n**[앱의 핵심 목적]**\n방을 둘러싼 붉은선(외곽선)과 검은선(내부 구획선)의 길이 수치를 표시해야 해. 치수보조선은 반드시 선이 꺾이는 모서리에서부터 시작해야 해.\n\n**[🚨 가장 잦은 AI 오류 절대 주의 🚨]**\n도면의 가장 바깥쪽을 감싸는 거대한 붉은색 테두리 전체를 하나의 큰 방(Bounding Box)으로 절대 잡지 마라! 네가 잡아야 할 좌표는 오직 '글씨(송백실, 음악실 등)'가 적혀있는 **가장 작게 구획된 개별 방 단위의 타이트한 테두리**뿐이다.\n\n**[공간 식별 및 기점(좌표) 추출 규칙 (매우 중요!)]**\n1. 공간 식별: 굵은 붉은선(마젠타선)으로 감싸인 영역 내부가 검은색 선(한 줄, 두 줄, 진한 줄 등)으로 구획되어 있다면, 각각을 독립된 '방'으로 취급해. ("송백실", "음악실" 등)\n2. 좌표 추출 원칙: 각 방을 완벽하게 감싸는 가장 작은 사각형 박스의 최소/최대 좌표(xMin, xMax, yMin, yMax)를 추출해. \n   - 이 좌표점들은 반드시 외곽 '붉은선' 또는 구획을 나누는 '검은선'이 꺾이거나 교차하는 모서리(Corner)를 정확히 가리켜야 해.\n   - 허공이 아니라, 반드시 그 **'선의 두께 정가운데(중심)'** 픽셀 위치를 0~100 백분율로 지정해.\n\n**[출력 요구사항]**\n식별된 모든 방에 대해 다음 데이터를 추출해:\n- roomName: 방 이름 (예: "송백실")\n- wText: 가로 길이 수치 (도면에 적힌 치수를 바탕으로 수학적으로 추정해, N/A 금지. 예: "W: 8.0m")\n- hText: 세로 길이 수치 (예: "H: 6.5m")\n- xMin: 개별 방의 왼쪽 벽면 중심 X 좌표 (백분율)\n- xMax: 개별 방의 오른쪽 벽면 중심 X 좌표 (백분율)\n- yMin: 개별 방의 위쪽 벽면 중심 Y 좌표 (백분율)\n- yMax: 개별 방의 아래쪽 벽면 중심 Y 좌표 (백분율)`,
             },
             {
               inlineData: {
@@ -93,7 +85,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 CAD 도면 분석가야. 각 방의 이름을 식별하고, 사방 치수선을 그리기 위해 각 방을 완벽히 감싸는 사각형(Bounding Box)의 좌표(xMin, xMax, yMin, yMax)를 추출해. 이 좌표는 허공이 아니라 반드시 '붉은선이나 검은선이 꺾이는 모서리의 두께 정가운데 픽셀'이어야 해. 치수는 최대한 추정해서 N/A 없이 기입해. 응답은 JSON 형식이어야 해.",
+            text: "너는 건축 CAD 도면 분석가야. 각 방의 이름을 식별하고, 사방 치수선을 그리기 위해 각 방을 완벽히 감싸는 타이트한 사각형(Bounding Box)의 좌표(xMin, xMax, yMin, yMax)를 추출해. 도면 전체의 외곽선을 잡지 말고 개별 방의 모서리 중심을 찾아라. 치수는 최대한 추정해서 N/A 없이 기입해. 응답은 JSON 형식이어야 해.",
           },
         ],
       },
@@ -133,34 +125,44 @@ export default function App() {
     };
 
     try {
-      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${finalApiKey}`;
-      const listRes = await fetch(listUrl);
+      let apiUrl = "";
 
-      if (!listRes.ok) {
-        const err = await listRes.json().catch(() => ({}));
-        throw new Error(
-          `[상태 코드 ${listRes.status}] 구글 API 서버 접근 거부: ${err.error?.message || "권한 없음"}`,
-        );
+      if (finalApiKey) {
+        // Vercel 환경
+        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${finalApiKey}`;
+        const listRes = await fetch(listUrl);
+
+        if (!listRes.ok) {
+          const err = await listRes.json().catch(() => ({}));
+          throw new Error(
+            `[상태 코드 ${listRes.status}] 구글 API 서버 접근 거부: ${err.error?.message || "권한 없음"}`,
+          );
+        }
+
+        const listData = await listRes.json();
+        const availableModels = listData.models?.map((m) => m.name) || [];
+
+        // 💡 [핵심 조치] Vercel에서도 제미나이 미리보기 화면과 동일한 지능을 낼 수 있도록 2.5-flash 계열을 최우선으로 찾도록 순서 변경!
+        let targetModel =
+          availableModels.find((m) => m.includes("gemini-2.5-flash")) ||
+          availableModels.find((m) => m.includes("gemini-2.0-flash")) ||
+          availableModels.find((m) => m.includes("gemini-1.5-pro")) ||
+          availableModels.find((m) => m.includes("gemini-1.5-flash")) ||
+          availableModels.find((m) => m.includes("gemini-1.0-pro")) ||
+          availableModels.find((m) => m.includes("gemini"));
+
+        if (!targetModel) {
+          throw new Error(
+            `이 API 키로는 접근 가능한 Gemini 모델이 전혀 없습니다.`,
+          );
+        }
+        apiUrl = `https://generativelanguage.googleapis.com/v1beta/${targetModel}:generateContent?key=${finalApiKey}`;
+      } else {
+        // 제미나이 미리보기 환경
+        apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=`;
       }
 
-      const listData = await listRes.json();
-      const availableModels = listData.models?.map((m) => m.name) || [];
-
-      let targetModel =
-        availableModels.find((m) => m.includes("gemini-1.5-pro")) ||
-        availableModels.find((m) => m.includes("gemini-1.5-flash")) ||
-        availableModels.find((m) => m.includes("gemini-1.0-pro")) ||
-        availableModels.find((m) => m.includes("gemini"));
-
-      if (!targetModel) {
-        throw new Error(
-          `이 API 키로는 접근 가능한 Gemini 모델이 전혀 없습니다.`,
-        );
-      }
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/${targetModel}:generateContent?key=${finalApiKey}`;
-
-      const response = await fetch(url, {
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -191,7 +193,6 @@ export default function App() {
     }
   };
 
-  // 💡 [핵심 업데이트] AI가 찾은 방 모서리(정중앙)에서 치수 보조선이 완벽하게 맞물려 뻗어 나오도록 캔버스 그리기 로직 전면 수정
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -208,16 +209,13 @@ export default function App() {
         const fontSize = Math.max(12, Math.floor(canvas.width * 0.012));
 
         analysisResult.rooms.forEach((room) => {
-          // 좌표 오류(뒤집힘) 방지
           if (room.xMin >= room.xMax || room.yMin >= room.yMax) return;
 
-          // AI가 찾은 붉은선/검은선 두께 정가운데의 꼭짓점 4개 좌표
           const pxXMin = (room.xMin / 100) * canvas.width;
           const pxXMax = (room.xMax / 100) * canvas.width;
           const pxYMin = (room.yMin / 100) * canvas.height;
           const pxYMax = (room.yMax / 100) * canvas.height;
 
-          // 치수선을 그리는 함수 (정확한 꼭짓점 x1, y1, x2, y2에서 시작)
           const drawDimLine = (
             x1,
             y1,
@@ -227,9 +225,9 @@ export default function App() {
             isHorizontal,
             position,
           ) => {
-            const offset = Math.max(25, canvas.width * 0.025); // 선에서 얼마나 띄울지
-            const overrun = 8; // 보조선이 메인 치수선을 넘어가는 길이
-            const tick = 6; // 사선 틱 길이
+            const offset = Math.max(25, canvas.width * 0.025);
+            const overrun = 8;
+            const tick = 6;
 
             ctx.save();
             ctx.strokeStyle = "#2563eb";
@@ -241,30 +239,28 @@ export default function App() {
               dimLineX2 = x2,
               dimLineY2 = y2;
             let extStartX1 = x1,
-              extStartY1 = y1; // 보조선 시작점 1 (무조건 도면 선 정중앙)
+              extStartY1 = y1;
             let extStartX2 = x2,
-              extStartY2 = y2; // 보조선 시작점 2 (무조건 도면 선 정중앙)
+              extStartY2 = y2;
             let extEndX1 = x1,
-              extEndY1 = y1; // 보조선 끝점 1
+              extEndY1 = y1;
             let extEndX2 = x2,
-              extEndY2 = y2; // 보조선 끝점 2
+              extEndY2 = y2;
 
-            // 방향(상하좌우)에 따른 덧셈/뺄셈 계산
             if (isHorizontal) {
-              const dir = position === "top" ? -1 : 1; // top이면 위로(-), bottom이면 아래로(+)
+              const dir = position === "top" ? -1 : 1;
               dimLineY1 = y1 + offset * dir;
               dimLineY2 = y2 + offset * dir;
               extEndY1 = dimLineY1 + overrun * dir;
               extEndY2 = dimLineY2 + overrun * dir;
             } else {
-              const dir = position === "left" ? -1 : 1; // left면 왼쪽으로(-), right면 오른쪽으로(+)
+              const dir = position === "left" ? -1 : 1;
               dimLineX1 = x1 + offset * dir;
               dimLineX2 = x2 + offset * dir;
               extEndX1 = dimLineX1 + overrun * dir;
               extEndX2 = dimLineX2 + overrun * dir;
             }
 
-            // 1. 치수 보조선(연장선) 긋기: 붉은선 코너 한가운데서 시작해서 바깥으로 뻗어나감
             ctx.beginPath();
             ctx.moveTo(extStartX1, extStartY1);
             ctx.lineTo(extEndX1, extEndY1);
@@ -272,13 +268,11 @@ export default function App() {
             ctx.lineTo(extEndX2, extEndY2);
             ctx.stroke();
 
-            // 2. 메인 치수선 긋기
             ctx.beginPath();
             ctx.moveTo(dimLineX1, dimLineY1);
             ctx.lineTo(dimLineX2, dimLineY2);
             ctx.stroke();
 
-            // 3. 끝점 틱(사선) 긋기
             ctx.beginPath();
             if (isHorizontal) {
               ctx.moveTo(dimLineX1 - tick, dimLineY1 + tick);
@@ -294,7 +288,6 @@ export default function App() {
             ctx.lineWidth = Math.max(2.5, Math.floor(canvas.width * 0.0025));
             ctx.stroke();
 
-            // 4. 수치 텍스트 작성 (가독성을 위한 하얀 배경)
             const cx = (dimLineX1 + dimLineX2) / 2;
             const cy = (dimLineY1 + dimLineY2) / 2;
             let textX = cx;
@@ -331,8 +324,7 @@ export default function App() {
             ctx.restore();
           };
 
-          // 방을 완벽하게 감싸는 4개의 치수선 생성 (좌표가 완벽히 맞물림)
-          drawDimLine(pxXMin, pxYMin, pxXMax, pxYMin, room.wText, true, "top"); // 윗면
+          drawDimLine(pxXMin, pxYMin, pxXMax, pxYMin, room.wText, true, "top");
           drawDimLine(
             pxXMin,
             pxYMax,
@@ -341,7 +333,7 @@ export default function App() {
             room.wText,
             true,
             "bottom",
-          ); // 아랫면
+          );
           drawDimLine(
             pxXMin,
             pxYMin,
@@ -350,7 +342,7 @@ export default function App() {
             room.hText,
             false,
             "left",
-          ); // 왼쪽면
+          );
           drawDimLine(
             pxXMax,
             pxYMin,
@@ -359,9 +351,8 @@ export default function App() {
             room.hText,
             false,
             "right",
-          ); // 오른쪽면
+          );
 
-          // 방 이름 연하게 표시 (어느 방을 기준으로 그렸는지 식별)
           ctx.save();
           ctx.fillStyle = "rgba(220, 38, 38, 0.4)";
           ctx.font = `bold ${fontSize * 1.5}px sans-serif`;
@@ -445,7 +436,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                모서리 중앙점을 추적하여 완벽한 치수선을 그리는 중...
+                최신 AI가 방을 정밀 구획하고 치수선을 그리는 중...
               </>
             ) : analysisResult ? (
               "✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)"
