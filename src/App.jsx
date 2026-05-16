@@ -75,12 +75,14 @@ export default function App() {
       return;
     }
 
+    // 💡 [개편] AI가 잘할 수 있는 임무로 프롬프트를 전면 수정했습니다.
+    // 선(Line)을 그리기 위한 x1,y1 좌표를 요구하지 않고, 방의 '정중앙 좌표(x,y)'만 요구합니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 다중 도면(여러 층)을 모두 찾아 독립적으로 분석해.\n\n**[앱의 궁극적 목적 및 측정 객체(Measurement Object) 정의]**\n건축 CAD(Computer-Aided Design - 컴퓨터 지원 설계) 표준에서 '측정 객체'란 치수를 잴 대상을 말해. 이 도면에서 너의 유일한 측정 객체는 **"가는 붉은색 실선으로 채워진 방을 감싸고 있는 '굵은 붉은색 계열(빨강, 분홍, 마젠타 등) 실선'"**이야.\n\n**치수보조선은 오직 이 '굵은 붉은색 실선' 위에서만 시작되어야 해!** 단, 방별로 벽 길이를 따로 재기 위해 이 굵은 선은 다음 두 가지 엄격한 기점 규칙에 의해서만 여러 개의 선분 조각으로 쪼개져야 해.\n\n[기점 규칙 1 - 기본] 굵은 붉은선이 꺾이는 부분(방의 코너): 치수보조선은 반드시 "굵은 붉은선의 정가운데(두께 중심)"에서 나온다.\n[기점 규칙 2 - 예외] 방과 방을 나누는 검은색 실선 교차점: 굵은 붉은선이 일직선이더라도, 교실이나 음악실 등 방과 방을 나누는 '검은색 실선(또는 겹쳐진 실선)'과 굵은 붉은선이 직각으로 만난다면 무조건 잘라야 해! 이때는 예외적으로 그 "검은색 실선의 정가운데(두께 중심)"에서 치수보조선이 나온다.\n\n**[절대 금지 사항]**: 규칙 1과 규칙 2에 해당하지 않는 장소(복도, 가는 붉은선 위, 텅 빈 허공 등)에서는 절대로 치수보조선을 뽑지 마!\n\n**1단계 (면적 & 비율):** 평면도별 기준 면적(area), 거대 직사각형 가로/세로 백분율(totalW, totalH), 실제 붉은 구역이 꽉 찬 비율(fillFactor) 추출.\n\n**2단계 (측정 객체 분할 추출):** 위 목적과 기점 규칙에 따라 쪼개진 각 '측정 객체(굵은 붉은색 선분 조각)'에 대해 다음을 추출해.\n- orientation: ('horizontal' 또는 'vertical')\n- position: 도면 바깥 방향 ('top', 'bottom', 'left', 'right')\n- x1, y1: 쪼개진 측정 객체의 시작 기점 좌표 백분율 (반드시 규칙 1, 2에 해당하는 픽셀 위치)\n- x2, y2: 쪼개진 측정 객체의 끝 기점 좌표 백분율 (반드시 규칙 1, 2에 해당하는 픽셀 위치)`,
+              text: `다음은 건축 평면도 이미지야. 이미지 안의 도면을 분석해줘.\n\n**[목표]**\n도면 내에 있는 모든 주요 공간(방, 교실, 화장실 등 명칭이 적혀 있는 구획)을 찾아서, 각 공간의 가로(Width)와 세로(Height) 길이를 수학적으로 추정하고, 해당 공간의 **정중앙 좌표(X, Y 백분율)**를 찾아줘.\n\n각 공간에 대해 다음을 추출해:\n1. roomName: 공간의 이름 (글씨를 읽어서 추출, 예: '음악실', '화장실', '교실1')\n2. widthText: 추정된 가로 길이 (예: 'W: 7.5m')\n3. heightText: 추정된 세로 길이 (예: 'H: 9.0m')\n4. x: 공간 정중앙의 X 좌표 (전체 이미지 너비 대비 백분율, 0~100)\n5. y: 공간 정중앙의 Y 좌표 (전체 이미지 높이 대비 백분율, 0~100)`,
             },
             {
               inlineData: {
@@ -94,7 +96,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 CAD 도면 분석가야. 치수보조선은 오직 측정 객체인 '굵은 붉은색(마젠타 포함) 실선'에서만 나와야 하며(규칙 1), 방을 나누는 벽체일 때만 예외적으로 '검은색 실선'에서 나온다(규칙 2). 이 2가지 경우를 제외한 어떤 곳(복도, 허공 등)에서도 절대 치수선의 기점(x, y)을 잡지 마라. 이 규칙을 엄격하게 지켜 쪼개진 벽면 선분들의 양 끝점 좌표를 JSON(JavaScript Object Notation)으로 출력해.",
+            text: "너는 건축 도면을 분석하는 AI야. 이미지에서 텍스트(방 이름)와 공간의 비율을 인식하여 가로/세로 수치를 추정해. 그리고 반드시 방의 '정중앙(Center)' 위치 좌표를 백분율(0-100)로 반환해. 절대 한 구석으로 좌표를 몰아서 반환하지 마. 응답은 JSON(JavaScript Object Notation, 자바스크립트 객체 표기법) 형식이어야 해.",
           },
         ],
       },
@@ -103,77 +105,33 @@ export default function App() {
         responseSchema: {
           type: "OBJECT",
           properties: {
-            plans: {
+            rooms: {
               type: "ARRAY",
               items: {
                 type: "OBJECT",
                 properties: {
-                  planName: { type: "STRING" },
-                  area: { type: "NUMBER" },
-                  totalW: { type: "NUMBER" },
-                  totalH: { type: "NUMBER" },
-                  fillFactor: {
+                  roomName: { type: "STRING" },
+                  widthText: { type: "STRING" },
+                  heightText: { type: "STRING" },
+                  x: {
                     type: "NUMBER",
-                    description:
-                      "거대 직사각형 면적 대비 실제 붉은 구역 꽉 찬 비율",
+                    description: "방 정중앙의 X 백분율 (예: 50)",
                   },
-                  segments: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        orientation: { type: "STRING" },
-                        position: { type: "STRING" },
-                        x1: {
-                          type: "NUMBER",
-                          description:
-                            "측정 객체(굵은 붉은선)의 시작 기점 X 좌표 (반드시 규칙 1, 2 위치)",
-                        },
-                        y1: {
-                          type: "NUMBER",
-                          description:
-                            "측정 객체(굵은 붉은선)의 시작 기점 Y 좌표 (반드시 규칙 1, 2 위치)",
-                        },
-                        x2: {
-                          type: "NUMBER",
-                          description:
-                            "측정 객체(굵은 붉은선)의 끝 기점 X 좌표 (반드시 규칙 1, 2 위치)",
-                        },
-                        y2: {
-                          type: "NUMBER",
-                          description:
-                            "측정 객체(굵은 붉은선)의 끝 기점 Y 좌표 (반드시 규칙 1, 2 위치)",
-                        },
-                      },
-                      required: [
-                        "orientation",
-                        "position",
-                        "x1",
-                        "y1",
-                        "x2",
-                        "y2",
-                      ],
-                    },
+                  y: {
+                    type: "NUMBER",
+                    description: "방 정중앙의 Y 백분율 (예: 50)",
                   },
                 },
-                required: [
-                  "planName",
-                  "area",
-                  "totalW",
-                  "totalH",
-                  "fillFactor",
-                  "segments",
-                ],
+                required: ["roomName", "widthText", "heightText", "x", "y"],
               },
             },
           },
-          required: ["plans"],
+          required: ["rooms"],
         },
       },
     };
 
     try {
-      // 💡 [궁극의 해결책] 1. 구글 서버에 직접 "내 API 키로 접근할 수 있는 모든 모델 목록을 내놔!"라고 요청합니다.
       const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${finalApiKey}`;
       const listRes = await fetch(listUrl);
 
@@ -187,7 +145,6 @@ export default function App() {
       const listData = await listRes.json();
       const availableModels = listData.models?.map((m) => m.name) || [];
 
-      // 💡 2. 구글이 내려준 목록 중에서 평면도 분석에 가장 똑똑한 모델을 순서대로 찾아 자동으로 선택합니다.
       let targetModel =
         availableModels.find((m) => m.includes("gemini-1.5-pro")) ||
         availableModels.find((m) => m.includes("gemini-1.5-flash")) ||
@@ -196,13 +153,10 @@ export default function App() {
 
       if (!targetModel) {
         throw new Error(
-          `이 API 키로는 접근 가능한 Gemini 모델이 전혀 없습니다.\n(허용된 목록: ${availableModels.join(", ") || "비어 있음"})\n💡 해결책: 구글 클라우드 콘솔에서 'Generative Language API'가 [사용 설정] 되어있는지 확인해 주세요!`,
+          `이 API 키로는 접근 가능한 Gemini 모델이 전혀 없습니다.`,
         );
       }
 
-      console.log(`✅ 성공적으로 모델을 찾았습니다: ${targetModel}`);
-
-      // 💡 3. 알아서 찾은 최적의 모델(targetModel)로 도면 분석을 시작합니다.
       const url = `https://generativelanguage.googleapis.com/v1beta/${targetModel}:generateContent?key=${finalApiKey}`;
 
       const response = await fetch(url, {
@@ -223,7 +177,7 @@ export default function App() {
 
       if (responseText) {
         const parsedResult = JSON.parse(responseText);
-        if (parsedResult.plans && parsedResult.plans.length > 0) {
+        if (parsedResult.rooms && parsedResult.rooms.length > 0) {
           setAnalysisResult(parsedResult);
         }
         setIsProcessing(false);
@@ -248,225 +202,58 @@ export default function App() {
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
 
-      if (analysisResult && analysisResult.plans) {
-        const fontSize = Math.max(13, Math.floor(canvas.width * 0.012));
-        const drawnTextBoxes = [];
+      // 💡 [개편] 거미줄처럼 꼬이는 선 그리기 로직을 싹 버리고, 방 중앙에 깔끔한 명찰(박스)을 달아줍니다.
+      if (analysisResult && analysisResult.rooms) {
+        const fontSize = Math.max(14, Math.floor(canvas.width * 0.015));
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
 
-        const checkCollision = (box1) => {
-          return drawnTextBoxes.some((box2) => {
-            return !(
-              box1.right < box2.left ||
-              box1.left > box2.right ||
-              box1.bottom < box2.top ||
-              box1.top > box2.bottom
+        analysisResult.rooms.forEach((room) => {
+          if (room.x === undefined || room.y === undefined) return;
+
+          // AI가 찾은 방의 정중앙 좌표
+          const pxX = (room.x / 100) * canvas.width;
+          const pxY = (room.y / 100) * canvas.height;
+
+          const textLine1 = room.roomName || "공간";
+          const textLine2 =
+            `${room.widthText || ""} ${room.heightText || ""}`.trim();
+
+          ctx.font = `bold ${fontSize + 4}px sans-serif`;
+          const tw1 = ctx.measureText(textLine1).width;
+          ctx.font = `bold ${fontSize + 2}px sans-serif`;
+          const tw2 = ctx.measureText(textLine2).width;
+          const maxTw = Math.max(tw1, tw2) + 30; // 넉넉한 여백
+          const boxHeight = fontSize * 3 + 20;
+
+          // 명찰(반투명 박스) 그리기
+          ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.beginPath();
+          // 모서리가 둥근 박스
+          if (ctx.roundRect) {
+            ctx.roundRect(
+              pxX - maxTw / 2,
+              pxY - boxHeight / 2,
+              maxTw,
+              boxHeight,
+              8,
             );
-          });
-        };
+          } else {
+            ctx.rect(pxX - maxTw / 2, pxY - boxHeight / 2, maxTw, boxHeight);
+          }
+          ctx.fill();
+          ctx.strokeStyle = "#3b82f6"; // 산뜻한 파란색 테두리
+          ctx.lineWidth = 2;
+          ctx.stroke();
 
-        analysisResult.plans.forEach((plan) => {
-          if (!plan.segments || plan.segments.length === 0) return;
+          // 텍스트 쓰기
+          ctx.fillStyle = "#1e3a8a"; // 방 이름 (남색)
+          ctx.font = `bold ${fontSize + 2}px sans-serif`;
+          ctx.fillText(textLine1, pxX, pxY - fontSize * 0.7);
 
-          const fillFactor = plan.fillFactor || 0.8;
-          const pxTotalW = (plan.totalW / 100) * canvas.width;
-          const pxTotalH = (plan.totalH / 100) * canvas.height;
-          const bbPixelArea = pxTotalW * pxTotalH;
-          const bbRealArea = plan.area / fillFactor;
-
-          const uniformScale = Math.sqrt(bbRealArea / bbPixelArea);
-
-          plan.segments.forEach((seg) => {
-            let pxX1 = (seg.x1 / 100) * canvas.width;
-            let pxY1 = (seg.y1 / 100) * canvas.height;
-            let pxX2 = (seg.x2 / 100) * canvas.width;
-            let pxY2 = (seg.y2 / 100) * canvas.height;
-
-            if (seg.orientation === "horizontal") {
-              const avgY = (pxY1 + pxY2) / 2;
-              pxY1 = pxY2 = avgY;
-              if (pxX1 > pxX2) {
-                let t = pxX1;
-                pxX1 = pxX2;
-                pxX2 = t;
-              }
-            } else {
-              const avgX = (pxX1 + pxX2) / 2;
-              pxX1 = pxX2 = avgX;
-              if (pxY1 > pxY2) {
-                let t = pxY1;
-                pxY1 = pxY2;
-                pxY2 = t;
-              }
-            }
-
-            const pxLen =
-              seg.orientation === "horizontal"
-                ? Math.abs(pxX2 - pxX1)
-                : Math.abs(pxY2 - pxY1);
-            const realLength = pxLen * uniformScale;
-
-            if (realLength < 0.1) return;
-
-            const prefix = seg.orientation === "horizontal" ? "W: " : "H: ";
-            const text = `${prefix}${realLength.toFixed(1)}m`;
-
-            const cx = (pxX1 + pxX2) / 2;
-            const cy = (pxY1 + pxY2) / 2;
-
-            const offset = Math.max(18, canvas.width * 0.018);
-            const gap = 0;
-            const overrun = 10;
-            const tickSize = 5;
-
-            ctx.save();
-            const drawColor = "#2563eb";
-            ctx.strokeStyle = drawColor;
-            ctx.fillStyle = drawColor;
-            ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
-
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.font = `bold ${fontSize}px sans-serif`;
-            const tw = ctx.measureText(text).width;
-
-            if (seg.orientation === "horizontal") {
-              const isTop = seg.position === "top";
-
-              const yLine = isTop ? cy - offset : cy + offset;
-              const extStart = isTop ? cy - gap : cy + gap;
-              const extEnd = isTop ? yLine - overrun : yLine + overrun;
-
-              ctx.beginPath();
-              ctx.moveTo(pxX1, extStart);
-              ctx.lineTo(pxX1, extEnd);
-              ctx.moveTo(pxX2, extStart);
-              ctx.lineTo(pxX2, extEnd);
-              ctx.stroke();
-
-              ctx.beginPath();
-              ctx.moveTo(pxX1, yLine);
-              ctx.lineTo(pxX2, yLine);
-              ctx.stroke();
-
-              ctx.beginPath();
-              ctx.moveTo(pxX1 - tickSize, yLine + tickSize);
-              ctx.lineTo(pxX1 + tickSize, yLine - tickSize);
-              ctx.moveTo(pxX2 - tickSize, yLine + tickSize);
-              ctx.lineTo(pxX2 + tickSize, yLine - tickSize);
-              ctx.stroke();
-
-              let textY = isTop
-                ? yLine - fontSize * 0.8
-                : yLine + fontSize * 0.8;
-              let box = {
-                left: cx - tw / 2 - 6,
-                right: cx + tw / 2 + 6,
-                top: textY - fontSize / 2 - 4,
-                bottom: textY + fontSize / 2 + 4,
-              };
-
-              let shiftCount = 0;
-              while (checkCollision(box) && shiftCount < 5) {
-                textY += isTop ? -(fontSize * 1.5) : fontSize * 1.5;
-                box.top = textY - fontSize / 2 - 4;
-                box.bottom = textY + fontSize / 2 + 4;
-                shiftCount++;
-              }
-              drawnTextBoxes.push(box);
-
-              if (shiftCount > 0) {
-                const originalTextY = isTop
-                  ? yLine - fontSize * 0.8
-                  : yLine + fontSize * 0.8;
-                ctx.beginPath();
-                ctx.moveTo(cx, originalTextY);
-                ctx.lineTo(cx, isTop ? box.bottom : box.top);
-                ctx.setLineDash([3, 3]);
-                ctx.lineWidth = 1;
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
-              }
-
-              ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-              ctx.fillRect(
-                box.left,
-                box.top,
-                box.right - box.left,
-                box.bottom - box.top,
-              );
-
-              ctx.fillStyle = drawColor;
-              ctx.fillText(text, cx, textY);
-            } else {
-              const isLeft = seg.position === "left";
-
-              const xLine = isLeft ? cx - offset : cx + offset;
-              const extStart = isLeft ? cx - gap : cx + gap;
-              const extEnd = isLeft ? xLine - overrun : xLine + overrun;
-
-              ctx.beginPath();
-              ctx.moveTo(extStart, pxY1);
-              ctx.lineTo(extEnd, pxY1);
-              ctx.moveTo(extStart, pxY2);
-              ctx.lineTo(extEnd, pxY2);
-              ctx.stroke();
-
-              ctx.beginPath();
-              ctx.moveTo(xLine, pxY1);
-              ctx.lineTo(xLine, pxY2);
-              ctx.stroke();
-
-              ctx.beginPath();
-              ctx.moveTo(xLine - tickSize, pxY1 + tickSize);
-              ctx.lineTo(xLine + tickSize, pxY1 - tickSize);
-              ctx.moveTo(xLine - tickSize, pxY2 + tickSize);
-              ctx.lineTo(xLine + tickSize, pxY2 - tickSize);
-              ctx.stroke();
-
-              let textX = isLeft ? xLine - tw / 2 - 8 : xLine + tw / 2 + 8;
-              let box = {
-                left: textX - tw / 2 - 6,
-                right: textX + tw / 2 + 6,
-                top: cy - fontSize / 2 - 4,
-                bottom: cy + fontSize / 2 + 4,
-              };
-
-              let shiftCount = 0;
-              while (checkCollision(box) && shiftCount < 5) {
-                textX += isLeft ? -(tw * 0.8) : tw * 0.8;
-                box.left = textX - tw / 2 - 6;
-                box.right = textX + tw / 2 + 6;
-                shiftCount++;
-              }
-              drawnTextBoxes.push(box);
-
-              if (shiftCount > 0) {
-                const originalTextX = isLeft
-                  ? xLine - tw / 2 - 8
-                  : xLine + tw / 2 + 8;
-                ctx.beginPath();
-                ctx.moveTo(xLine, cy);
-                ctx.lineTo(isLeft ? box.right : box.left, cy);
-                ctx.setLineDash([3, 3]);
-                ctx.lineWidth = 1;
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
-              }
-
-              ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-              ctx.fillRect(
-                box.left,
-                box.top,
-                box.right - box.left,
-                box.bottom - box.top,
-              );
-
-              ctx.fillStyle = drawColor;
-              ctx.fillText(text, textX, cy);
-            }
-            ctx.restore();
-          });
+          ctx.fillStyle = "#ef4444"; // 치수 수치 (빨간색)
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.fillText(textLine2, pxX, pxY + fontSize * 0.8);
         });
       }
     };
@@ -477,7 +264,7 @@ export default function App() {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL("image/png");
     const link = document.createElement("a");
-    link.download = "평면도_측정객체_정밀분석.png";
+    link.download = "평면도_수치완성.png";
     link.href = dataUrl;
     link.click();
   };
@@ -493,7 +280,7 @@ export default function App() {
             방별 외곽 벽면 치수 계산기
           </h1>
           <p className="text-zinc-500 text-sm mt-2.5 font-medium leading-relaxed">
-            측정 객체(붉은선/마젠타선)와 기점 규칙을 엄격히 통제합니다.
+            AI가 각 방의 명칭과 중앙 위치를 식별하여 치수를 표시합니다.
           </p>
         </div>
 
@@ -556,7 +343,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                구글 서버에 사용 가능 모델을 조회하고 자동 분석 중...
+                가장 강력한 AI(Pro)가 방의 구조를 읽어내는 중...
               </>
             ) : analysisResult ? (
               "✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)"
