@@ -7,6 +7,7 @@ import {
   Camera,
   UploadCloud,
   Frame,
+  Key,
 } from "lucide-react";
 
 export default function App() {
@@ -16,6 +17,10 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [error, setError] = useState("");
+
+  // 💡 [추가됨] 버셀을 무시하고 직접 키를 입력받을 상태 변수
+  const [customApiKey, setCustomApiKey] = useState("");
+
   const canvasRef = useRef(null);
 
   const handleImageUpload = (e) => {
@@ -50,25 +55,37 @@ export default function App() {
     setIsProcessing(true);
     setError("");
 
-    let finalApiKey = "";
+    // 💡 [핵심] 화면에 입력한 키를 1순위로 사용, 없으면 버셀 환경변수 사용
+    let finalApiKey = customApiKey.trim();
 
-    try {
-      if (
-        typeof import.meta !== "undefined" &&
-        import.meta.env &&
-        import.meta.env.VITE_GEMINI_API_KEY
-      ) {
-        finalApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!finalApiKey) {
+      try {
+        if (
+          typeof import.meta !== "undefined" &&
+          import.meta.env &&
+          import.meta.env.VITE_GEMINI_API_KEY
+        ) {
+          finalApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        }
+      } catch (e) {
+        console.warn("환경 변수를 불러오지 못했습니다.", e);
       }
-    } catch (e) {
-      console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    // 💡 [궁극의 에러 해결] 404 에러 시 자동으로 사용 가능한 다른 모델을 순차적으로 찔러보는 스마트 알고리즘
-    // 1순위: 최신 유료(Pro), 2순위: 기본 유료(Pro), 3순위: 무조건 작동하는 고속 무료(Flash)
-    const modelsToTry = finalApiKey
-      ? ["gemini-1.5-pro-002", "gemini-1.5-pro", "gemini-1.5-flash"]
-      : ["gemini-2.5-flash-preview-09-2025"];
+    // 그래도 키가 없으면 에러 발생
+    if (!finalApiKey) {
+      setError("API 키가 없습니다. 화면의 입력칸에 구글 API 키를 넣어주세요.");
+      setIsProcessing(false);
+      return;
+    }
+
+    // 테스트할 모델 목록 (Pro부터 Flash까지)
+    const modelsToTry = [
+      "gemini-1.5-pro-latest",
+      "gemini-1.5-pro",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-flash",
+    ];
 
     const payload = {
       contents: [
@@ -168,7 +185,7 @@ export default function App() {
     };
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const delays = [1000, 2000, 4000, 8000, 16000];
+    const delays = [1000, 2000, 4000, 8000];
     let currentModelIndex = 0;
     let attempt = 0;
 
@@ -186,20 +203,16 @@ export default function App() {
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
 
-          // 💡 404 에러 발생 시, 준비해둔 다음 대안 모델로 즉시 전환합니다!
           if (
             response.status === 404 &&
             currentModelIndex < modelsToTry.length - 1
           ) {
-            console.warn(
-              `${modelName} 접근 불가. 다음 모델(${modelsToTry[currentModelIndex + 1]})로 자동 전환합니다.`,
-            );
             currentModelIndex++;
-            continue; // 에러를 뱉지 않고 딜레이 없이 즉시 다음 모델로 재시도
+            continue;
           }
 
           throw new Error(
-            `[상태 코드 ${response.status}] ${errorData.error?.message || "구글 서버 응답 오류"}`,
+            `[${response.status}] ${errorData.error?.message || "서버 오류"}`,
           );
         }
 
@@ -219,7 +232,7 @@ export default function App() {
       } catch (err) {
         if (attempt === delays.length) {
           setError(
-            `🚨 구글 AI 통신 에러: ${err.message}\n\n💡 [안내] 시도 가능한 모든 모델에 접근할 수 없습니다. 구글 AI Studio에서 API 키의 권한 및 결제 설정(Billing)을 확인해 주세요.`,
+            `🚨 에러 원인 분석: 입력하신 API 키가 구글 AI 모델(${modelsToTry[currentModelIndex]}) 접근을 거부당했습니다. (상세: ${err.message})\n\n💡 [해결책] 방금 발급받으신 새 API 키가 맞다면, 구글 클라우드 콘솔에서 해당 프로젝트에 '결제(Billing)' 정보가 연동되어 있는지 확인해 주셔야 합니다.`,
           );
           setIsProcessing(false);
           return;
@@ -513,6 +526,25 @@ export default function App() {
             </label>
           </div>
 
+          {/* 💡 [추가] 오류 원인 파악을 위한 직접 입력칸 복구 */}
+          <div className="flex flex-col gap-3 bg-zinc-50 p-5 rounded-2xl border border-zinc-200">
+            <label className="font-bold text-zinc-800 text-sm flex items-center gap-2">
+              <Key className="w-4 h-4" /> 디버깅용 API 키 직접 입력 (선택)
+            </label>
+            <p className="text-xs text-zinc-500">
+              여기에 발급받은 새 키를 넣고 돌려보세요. 여기서 작동한다면
+              버셀(Vercel) 캐시 문제이고, 여기서도 에러가 난다면 구글 API 키
+              자체의 문제입니다.
+            </p>
+            <input
+              type="password"
+              value={customApiKey}
+              onChange={(e) => setCustomApiKey(e.target.value)}
+              placeholder="AIzaSy... 로 시작하는 새 API 키 붙여넣기"
+              className="w-full px-4 py-3 bg-white rounded-xl border border-zinc-300 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-sm shadow-sm"
+            />
+          </div>
+
           {error && (
             <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm flex items-start gap-3 border border-red-100 whitespace-pre-line">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -532,7 +564,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                최적의 AI 모델을 찾아 도면을 분석 중입니다...
+                모든 AI 모델을 차례로 점검 및 분석 중입니다...
               </>
             ) : analysisResult ? (
               "✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)"
