@@ -18,9 +18,7 @@ export default function App() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [error, setError] = useState("");
 
-  // 💡 [추가됨] 버셀을 무시하고 직접 키를 입력받을 상태 변수
   const [customApiKey, setCustomApiKey] = useState("");
-
   const canvasRef = useRef(null);
 
   const handleImageUpload = (e) => {
@@ -55,7 +53,6 @@ export default function App() {
     setIsProcessing(true);
     setError("");
 
-    // 💡 [핵심] 화면에 입력한 키를 1순위로 사용, 없으면 버셀 환경변수 사용
     let finalApiKey = customApiKey.trim();
 
     if (!finalApiKey) {
@@ -72,20 +69,11 @@ export default function App() {
       }
     }
 
-    // 그래도 키가 없으면 에러 발생
     if (!finalApiKey) {
       setError("API 키가 없습니다. 화면의 입력칸에 구글 API 키를 넣어주세요.");
       setIsProcessing(false);
       return;
     }
-
-    // 테스트할 모델 목록 (Pro부터 Flash까지)
-    const modelsToTry = [
-      "gemini-1.5-pro-latest",
-      "gemini-1.5-pro",
-      "gemini-1.5-flash-latest",
-      "gemini-1.5-flash",
-    ];
 
     const payload = {
       contents: [
@@ -184,62 +172,67 @@ export default function App() {
       },
     };
 
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const delays = [1000, 2000, 4000, 8000];
-    let currentModelIndex = 0;
-    let attempt = 0;
+    try {
+      // 💡 [궁극의 해결책] 1. 구글 서버에 직접 "내 API 키로 접근할 수 있는 모든 모델 목록을 내놔!"라고 요청합니다.
+      const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${finalApiKey}`;
+      const listRes = await fetch(listUrl);
 
-    while (attempt <= delays.length) {
-      let modelName = modelsToTry[currentModelIndex];
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${finalApiKey}`;
-
-      try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-
-          if (
-            response.status === 404 &&
-            currentModelIndex < modelsToTry.length - 1
-          ) {
-            currentModelIndex++;
-            continue;
-          }
-
-          throw new Error(
-            `[${response.status}] ${errorData.error?.message || "서버 오류"}`,
-          );
-        }
-
-        const data = await response.json();
-        const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (responseText) {
-          const parsedResult = JSON.parse(responseText);
-          if (parsedResult.plans && parsedResult.plans.length > 0) {
-            setAnalysisResult(parsedResult);
-          }
-          setIsProcessing(false);
-          return;
-        } else {
-          throw new Error("결과를 찾을 수 없습니다.");
-        }
-      } catch (err) {
-        if (attempt === delays.length) {
-          setError(
-            `🚨 에러 원인 분석: 입력하신 API 키가 구글 AI 모델(${modelsToTry[currentModelIndex]}) 접근을 거부당했습니다. (상세: ${err.message})\n\n💡 [해결책] 방금 발급받으신 새 API 키가 맞다면, 구글 클라우드 콘솔에서 해당 프로젝트에 '결제(Billing)' 정보가 연동되어 있는지 확인해 주셔야 합니다.`,
-          );
-          setIsProcessing(false);
-          return;
-        }
-        await sleep(delays[attempt]);
-        attempt++;
+      if (!listRes.ok) {
+        const err = await listRes.json().catch(() => ({}));
+        throw new Error(
+          `[상태 코드 ${listRes.status}] 구글 API 서버 접근 거부: ${err.error?.message || "권한 없음"}`,
+        );
       }
+
+      const listData = await listRes.json();
+      const availableModels = listData.models?.map((m) => m.name) || [];
+
+      // 💡 2. 구글이 내려준 목록 중에서 평면도 분석에 가장 똑똑한 모델을 순서대로 찾아 자동으로 선택합니다.
+      let targetModel =
+        availableModels.find((m) => m.includes("gemini-1.5-pro")) ||
+        availableModels.find((m) => m.includes("gemini-1.5-flash")) ||
+        availableModels.find((m) => m.includes("gemini-1.0-pro")) ||
+        availableModels.find((m) => m.includes("gemini"));
+
+      if (!targetModel) {
+        throw new Error(
+          `이 API 키로는 접근 가능한 Gemini 모델이 전혀 없습니다.\n(허용된 목록: ${availableModels.join(", ") || "비어 있음"})\n💡 해결책: 구글 클라우드 콘솔에서 'Generative Language API'가 [사용 설정] 되어있는지 확인해 주세요!`,
+        );
+      }
+
+      console.log(`✅ 성공적으로 모델을 찾았습니다: ${targetModel}`);
+
+      // 💡 3. 알아서 찾은 최적의 모델(targetModel)로 도면 분석을 시작합니다.
+      const url = `https://generativelanguage.googleapis.com/v1beta/${targetModel}:generateContent?key=${finalApiKey}`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          `[상태 코드 ${response.status}] 분석 중 서버 오류: ${errorData.error?.message || "알 수 없음"}`,
+        );
+      }
+
+      const data = await response.json();
+      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (responseText) {
+        const parsedResult = JSON.parse(responseText);
+        if (parsedResult.plans && parsedResult.plans.length > 0) {
+          setAnalysisResult(parsedResult);
+        }
+        setIsProcessing(false);
+      } else {
+        throw new Error("결과를 찾을 수 없습니다.");
+      }
+    } catch (err) {
+      setError(`🚨 AI 통신 에러: ${err.message}`);
+      setIsProcessing(false);
     }
   };
 
@@ -526,7 +519,6 @@ export default function App() {
             </label>
           </div>
 
-          {/* 💡 [추가] 오류 원인 파악을 위한 직접 입력칸 복구 */}
           <div className="flex flex-col gap-3 bg-zinc-50 p-5 rounded-2xl border border-zinc-200">
             <label className="font-bold text-zinc-800 text-sm flex items-center gap-2">
               <Key className="w-4 h-4" /> 디버깅용 API 키 직접 입력 (선택)
@@ -548,7 +540,7 @@ export default function App() {
           {error && (
             <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm flex items-start gap-3 border border-red-100 whitespace-pre-line">
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-              <p className="font-medium">{error}</p>
+              <p className="font-medium leading-relaxed">{error}</p>
             </div>
           )}
 
@@ -564,7 +556,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                모든 AI 모델을 차례로 점검 및 분석 중입니다...
+                구글 서버에 사용 가능 모델을 조회하고 자동 분석 중...
               </>
             ) : analysisResult ? (
               "✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)"
