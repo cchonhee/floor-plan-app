@@ -7,6 +7,7 @@ import {
   Camera,
   UploadCloud,
   Frame,
+  Key,
 } from "lucide-react";
 
 export default function App() {
@@ -73,13 +74,13 @@ export default function App() {
       return;
     }
 
-    // 💡 [핵심] 대표님의 정확한 정의(붉은선+검은구획선+방이름)를 프롬프트에 완벽히 이식했습니다.
+    // 💡 [핵심 업데이트] 대표님의 "선이 꺾이는 곳 중앙에서 보조선 추출" 원칙을 프롬프트에 이식했습니다.
     const payload = {
       contents: [
         {
           parts: [
             {
-              text: `다음은 건축 평면도 이미지야. 다중 도면이 있다면 모두 독립적으로 분석해.\n\n**[앱의 핵심 목적: 방(공간) 식별 및 사방 외곽 벽면 치수 표시]**\n이 도면에서 사람들이 사용하는 '방(공간)'을 정확히 식별하고, 각 방을 둘러싸고 있는 '4개의 면(상, 하, 좌, 우)'의 길이를 모두 측정해야 해.\n\n**[공간/방 식별 규칙 (매우 중요)]**\n1. 기본 영역: '굵은 붉은색(또는 마젠타색) 선'으로 감싸여 있고, 그 내부에 '가는 붉은색(또는 마젠타색) 가로 직선'이 여러 개 채워져 있는 곳이 사람들이 사용하는 기본 공간이야.\n2. 내부 구획: 이 큰 공간 내부가 '검은색 선(한 줄, 두 줄, 또는 진한 줄)'으로 구획되어 나뉘어 있다면, 나뉜 각각의 구역을 독립된 별개의 '방'으로 취급해.\n3. 방 이름: 이렇게 나뉜 각 공간/방 안에는 해당 방이 무엇인지 알려주는 이름(예: "송백실", "음악실", "계획실" 등)이 텍스트로 적혀 있어.\n\n**[치수 표시 대상]**\n각각의 방("송백실", "음악실" 등)을 식별했다면, 해당 방을 둘러싼 '사방의 길이'를 모두 파악해야 해. 그 사방의 테두리 선이 도면 바깥쪽의 '굵은 붉은선/마젠타선'이든, 방과 방을 나누는 내부의 '검은색 구획선'이든 상관없이 해당 방 전체가 차지하는 직사각형 영역(Bounding Box)의 좌표를 백분율로 추출해.\n\n**[출력 요구사항]**\n식별된 모든 방에 대해 다음을 추출해:\n- roomName: 방 이름 (예: "송백실")\n- wText: 실제 가로 길이 추정치 (숫자만 쓰지 말고 "7.5m" 형태로)\n- hText: 실제 세로 길이 추정치 (숫자만 쓰지 말고 "6.5m" 형태로)\n- xMin: 방 영역의 가장 왼쪽 X 좌표 (이미지 너비 대비 0~100 백분율)\n- xMax: 방 영역의 가장 오른쪽 X 좌표 (이미지 너비 대비 0~100 백분율)\n- yMin: 방 영역의 가장 위쪽 Y 좌표 (이미지 높이 대비 0~100 백분율)\n- yMax: 방 영역의 가장 아래쪽 Y 좌표 (이미지 높이 대비 0~100 백분율)`,
+              text: `다음은 건축 평면도 이미지야. 다중 도면이 있다면 모두 독립적으로 분석해.\n\n**[앱의 핵심 목적]**\n각 방(공간)을 둘러싼 벽면의 길이를 측정하고, 치수보조선이 정확히 '굵은 붉은선/마젠타선이 꺾이는 곳(모서리)'에서 시작되도록 좌표를 추출해야 해.\n\n**[공간 식별 및 기점(좌표) 추출 규칙 (매우 중요!)]**\n1. 공간 식별: 굵은 붉은선(마젠타선)으로 감싸여 있고 내부에 얇은 붉은 가로선이 채워진 곳, 혹은 그 내부가 검은색 선으로 구획되어 이름("송백실", "음악실" 등)이 붙은 곳이 하나의 개별 '방'이야.\n2. 치수보조선의 시작점(x1, y1)과 끝점(x2, y2) 추출 원칙:\n   - 반드시 외곽의 '굵은 붉은선 혹은 마젠타선이 꺾이는 곳(코너, 모서리)'을 기점으로 찾아라.\n   - 방을 구획하는 '검은색 선(한 줄, 두 줄, 진한 줄 등)'이 굵은 붉은선과 만나는 교차점도 선이 꺾이거나 나뉘는 곳이므로 동일한 기점으로 취급해라.\n   - 추출하는 좌표 (x, y) 픽셀 위치는 반드시 그 **'굵은 붉은선(혹은 마젠타선, 검은선) 두께의 정가운데(중심)'**에 찍혀야 해.\n\n**[출력 요구사항]**\n식별된 모든 방에 대해 4개의 벽면(상, 하, 좌, 우) 선분(segment) 데이터를 추출해:\n- roomName: 방 이름 (예: "송백실")\n- segments: 방을 둘러싼 4면의 측정 선분 배열\n  - position: 'top', 'bottom', 'left', 'right'\n  - orientation: 'horizontal' (상/하), 'vertical' (좌/우)\n  - text: 길이 수치 (예: "W: 8.0m" 또는 "H: 6.5m")\n  - x1, y1: 측정 선분의 시작점 X, Y 백분율 좌표 (반드시 선이 꺾이는 곳의 두께 중앙 픽셀)\n  - x2, y2: 측정 선분의 끝점 X, Y 백분율 좌표 (반드시 선이 꺾이는 곳의 두께 중앙 픽셀)`,
             },
             {
               inlineData: {
@@ -93,7 +94,7 @@ export default function App() {
       systemInstruction: {
         parts: [
           {
-            text: "너는 건축 CAD 도면 분석가야. 붉은색 외부 외곽선과 검은색 내부 구획선으로 나뉜 각 방(공간)을 이름과 함께 정확히 개별 식별해. 각 방을 둘러싼 사방(4면)의 치수선을 그리기 위해, 해당 방이 차지하는 기하학적 영역(Bounding Box)의 최소/최대 좌표(x,y)를 백분율(0-100)로 반환해. 응답은 JSON(JavaScript Object Notation) 형식이어야 해.",
+            text: "너는 건축 CAD 도면 분석가야. 각 방의 이름을 식별하고, 사방 치수선을 그리기 위해 방을 구성하는 선분들을 추출해. 치수선 기점 좌표(x1,y1, x2,y2)는 허공이나 대략적인 위치가 아니라, 반드시 '굵은 붉은선/마젠타선이 꺾이는 곳(모서리)'이나 '검은색 구획선과 만나는 교차점'의 '선 두께의 정가운데 픽셀' 위치를 0~100 백분율로 정확히 반환해야 해. 응답은 JSON(JavaScript Object Notation) 형식이어야 해.",
           },
         ],
       },
@@ -108,22 +109,32 @@ export default function App() {
                 type: "OBJECT",
                 properties: {
                   roomName: { type: "STRING" },
-                  wText: { type: "STRING" },
-                  hText: { type: "STRING" },
-                  xMin: { type: "NUMBER" },
-                  xMax: { type: "NUMBER" },
-                  yMin: { type: "NUMBER" },
-                  yMax: { type: "NUMBER" },
+                  segments: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        position: { type: "STRING" },
+                        orientation: { type: "STRING" },
+                        text: { type: "STRING" },
+                        x1: { type: "NUMBER" },
+                        y1: { type: "NUMBER" },
+                        x2: { type: "NUMBER" },
+                        y2: { type: "NUMBER" },
+                      },
+                      required: [
+                        "position",
+                        "orientation",
+                        "text",
+                        "x1",
+                        "y1",
+                        "x2",
+                        "y2",
+                      ],
+                    },
+                  },
                 },
-                required: [
-                  "roomName",
-                  "wText",
-                  "hText",
-                  "xMin",
-                  "xMax",
-                  "yMin",
-                  "yMax",
-                ],
+                required: ["roomName", "segments"],
               },
             },
           },
@@ -133,7 +144,6 @@ export default function App() {
     };
 
     try {
-      // 모델 자동 탐색 (버그 및 권한 차단 방지용)
       const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${finalApiKey}`;
       const listRes = await fetch(listUrl);
 
@@ -192,7 +202,7 @@ export default function App() {
     }
   };
 
-  // 💡 [개편] 파란색 치수선을 '사방(위,아래,좌,우)'에 그리는 로직으로 완벽 복구 및 업그레이드
+  // 💡 [핵심 업데이트] 붉은선 정가운데에서부터 보조선이 뻗어 나오도록 그리기 로직 전면 개편
   useEffect(() => {
     if (!imageSrc || !canvasRef.current) return;
 
@@ -209,110 +219,108 @@ export default function App() {
         const fontSize = Math.max(12, Math.floor(canvas.width * 0.012));
 
         analysisResult.rooms.forEach((room) => {
-          // 좌표 오류 방지
-          if (room.xMin >= room.xMax || room.yMin >= room.yMax) return;
+          if (!room.segments) return;
 
-          // AI가 인식한 방의 4면 모서리 좌표 변환
-          const pxX1 = (room.xMin / 100) * canvas.width;
-          const pxX2 = (room.xMax / 100) * canvas.width;
-          const pxY1 = (room.yMin / 100) * canvas.height;
-          const pxY2 = (room.yMax / 100) * canvas.height;
+          room.segments.forEach((seg) => {
+            // AI가 반환한 모서리 꺾이는 곳(선의 정가운데) 좌표
+            const pxX1 = (seg.x1 / 100) * canvas.width;
+            const pxY1 = (seg.y1 / 100) * canvas.height;
+            const pxX2 = (seg.x2 / 100) * canvas.width;
+            const pxY2 = (seg.y2 / 100) * canvas.height;
+            const isHorizontal = seg.orientation === "horizontal";
 
-          const wText = `W: ${room.wText}`;
-          const hText = `H: ${room.hText}`;
-
-          // 치수선을 그리는 공통 함수 (하루 전 스타일)
-          const drawDimLine = (
-            x1,
-            y1,
-            x2,
-            y2,
-            text,
-            isHorizontal,
-            position,
-          ) => {
-            const cx = (x1 + x2) / 2;
-            const cy = (y1 + y2) / 2;
-            const offset = Math.max(15, canvas.width * 0.015); // 방 테두리에서 띄우는 거리
-            const tick = 6;
-            const gap = 2;
+            const offset = Math.max(25, canvas.width * 0.025); // 메인 치수선이 띄워지는 거리
+            const overrun = 8; // 보조선이 치수선을 넘어가는 길이
+            const tick = 6; // 사선 길이
 
             ctx.save();
-            ctx.strokeStyle = "#2563eb"; // 파란색 선
-            ctx.fillStyle = "#2563eb"; // 파란색 글씨
+            ctx.strokeStyle = "#2563eb";
+            ctx.fillStyle = "#2563eb";
             ctx.lineWidth = Math.max(1.5, Math.floor(canvas.width * 0.0015));
 
-            let lineX1 = x1,
-              lineY1 = y1,
-              lineX2 = x2,
-              lineY2 = y2;
-            let extStartX1 = x1,
-              extStartY1 = y1,
-              extStartX2 = x2,
-              extStartY2 = y2;
+            let dimLineX1 = pxX1,
+              dimLineY1 = pxY1,
+              dimLineX2 = pxX2,
+              dimLineY2 = pxY2;
 
-            // 치수선 띄우는 위치 계산
+            // 💡 보조선(연장선)의 시작점: 무조건 굵은 붉은선/마젠타선의 '정가운데' (pxX, pxY)에서 시작!
+            let extStartX1 = pxX1,
+              extStartY1 = pxY1;
+            let extStartX2 = pxX2,
+              extStartY2 = pxY2;
+            let extEndX1 = pxX1,
+              extEndY1 = pxY1;
+            let extEndX2 = pxX2,
+              extEndY2 = pxY2;
+
             if (isHorizontal) {
-              lineY1 = lineY2 = position === "top" ? y1 - offset : y1 + offset;
-              extStartY1 = position === "top" ? y1 - gap : y1 + gap;
-              extStartY2 = position === "top" ? y2 - gap : y2 + gap;
+              dimLineY1 = dimLineY2 =
+                seg.position === "top" ? pxY1 - offset : pxY1 + offset;
+              extEndY1 = extEndY2 =
+                seg.position === "top"
+                  ? dimLineY1 - overrun
+                  : dimLineY1 + overrun;
             } else {
-              lineX1 = lineX2 = position === "left" ? x1 - offset : x1 + offset;
-              extStartX1 = position === "left" ? x1 - gap : x1 + gap;
-              extStartX2 = position === "left" ? x2 - gap : x2 + gap;
+              dimLineX1 = dimLineX2 =
+                seg.position === "left" ? pxX1 - offset : pxX1 + offset;
+              extEndX1 = extEndX2 =
+                seg.position === "left"
+                  ? dimLineX1 - overrun
+                  : dimLineX1 + overrun;
             }
 
-            // 1. 메인 치수선 긋기
-            ctx.beginPath();
-            ctx.moveTo(lineX1, lineY1);
-            ctx.lineTo(lineX2, lineY2);
-            ctx.stroke();
-
-            // 2. 보조선(연장선) 긋기
+            // 1. 치수 보조선(연장선) 긋기: 붉은선 한가운데서 시작해서 바깥으로 쭉 뻗어 나감
             ctx.beginPath();
             ctx.moveTo(extStartX1, extStartY1);
-            ctx.lineTo(lineX1, lineY1);
+            ctx.lineTo(extEndX1, extEndY1);
             ctx.moveTo(extStartX2, extStartY2);
-            ctx.lineTo(lineX2, lineY2);
-            ctx.setLineDash([3, 3]); // 점선 효과 약간 추가
+            ctx.lineTo(extEndX2, extEndY2);
             ctx.stroke();
-            ctx.setLineDash([]); // 원상 복구
+
+            // 2. 메인 치수선 긋기 (보조선을 가로지르는 선)
+            ctx.beginPath();
+            ctx.moveTo(dimLineX1, dimLineY1);
+            ctx.lineTo(dimLineX2, dimLineY2);
+            ctx.stroke();
 
             // 3. 끝점 틱(사선) 긋기
             ctx.beginPath();
             if (isHorizontal) {
-              ctx.moveTo(lineX1 - tick, lineY1 + tick);
-              ctx.lineTo(lineX1 + tick, lineY1 - tick);
-              ctx.moveTo(lineX2 - tick, lineY2 + tick);
-              ctx.lineTo(lineX2 + tick, lineY2 - tick);
+              ctx.moveTo(dimLineX1 - tick, dimLineY1 + tick);
+              ctx.lineTo(dimLineX1 + tick, dimLineY1 - tick);
+              ctx.moveTo(dimLineX2 - tick, dimLineY2 + tick);
+              ctx.lineTo(dimLineX2 + tick, dimLineY2 - tick);
             } else {
-              ctx.moveTo(lineX1 + tick, lineY1 - tick);
-              ctx.lineTo(lineX1 - tick, lineY1 + tick);
-              ctx.moveTo(lineX2 + tick, lineY2 - tick);
-              ctx.lineTo(lineX2 - tick, lineY2 + tick);
+              ctx.moveTo(dimLineX1 + tick, dimLineY1 - tick);
+              ctx.lineTo(dimLineX1 - tick, dimLineY1 + tick);
+              ctx.moveTo(dimLineX2 + tick, dimLineY2 - tick);
+              ctx.lineTo(dimLineX2 - tick, dimLineY2 + tick);
             }
-            ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002)); // 틱은 약간 더 두껍게
+            ctx.lineWidth = Math.max(2.5, Math.floor(canvas.width * 0.0025));
             ctx.stroke();
 
             // 4. 수치 텍스트 작성 (글씨 뒤에 하얀 배경 깔기)
+            const cx = (dimLineX1 + dimLineX2) / 2;
+            const cy = (dimLineY1 + dimLineY2) / 2;
             let textX = cx;
             let textY = cy;
+
             if (isHorizontal) {
               textY =
-                position === "top"
-                  ? lineY1 - fontSize * 0.8
-                  : lineY1 + fontSize * 0.8;
+                seg.position === "top"
+                  ? dimLineY1 - fontSize * 0.8
+                  : dimLineY1 + fontSize * 0.8;
             } else {
               textX =
-                position === "left"
-                  ? lineX1 - fontSize * 2.2
-                  : lineX1 + fontSize * 2.2;
+                seg.position === "left"
+                  ? dimLineX1 - fontSize * 2.5
+                  : dimLineX1 + fontSize * 2.5;
             }
 
             ctx.font = `bold ${fontSize}px sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            const tw = ctx.measureText(text).width;
+            const tw = ctx.measureText(seg.text).width;
 
             ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
             ctx.fillRect(
@@ -323,25 +331,30 @@ export default function App() {
             );
 
             ctx.fillStyle = "#2563eb";
-            ctx.fillText(text, textX, textY);
+            ctx.fillText(seg.text, textX, textY);
 
             ctx.restore();
-          };
+          });
 
-          // 방 하나당 '사방(4면)'에 모두 치수선을 그립니다!
-          drawDimLine(pxX1, pxY1, pxX2, pxY1, wText, true, "top"); // 윗면
-          drawDimLine(pxX1, pxY2, pxX2, pxY2, wText, true, "bottom"); // 아랫면
-          drawDimLine(pxX1, pxY1, pxX1, pxY2, hText, false, "left"); // 왼쪽면
-          drawDimLine(pxX2, pxY1, pxX2, pxY2, hText, false, "right"); // 오른쪽면
-
-          // 확인용: 어떤 방을 측정한 것인지 방 한가운데에 연한 빨간색으로 방 이름 표시
-          ctx.save();
-          ctx.fillStyle = "rgba(220, 38, 38, 0.4)";
-          ctx.font = `bold ${fontSize * 1.5}px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(room.roomName, (pxX1 + pxX2) / 2, (pxY1 + pxY2) / 2);
-          ctx.restore();
+          // 방 이름 연하게 표시
+          if (room.segments.length > 0) {
+            ctx.save();
+            ctx.fillStyle = "rgba(220, 38, 38, 0.35)";
+            ctx.font = `bold ${fontSize * 1.5}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            // 첫 선분을 이용해 대략적인 중앙 찾기
+            const firstSeg = room.segments[0];
+            const pxX1 = (firstSeg.x1 / 100) * canvas.width;
+            const pxY1 = (firstSeg.y1 / 100) * canvas.height;
+            // 텍스트 위치 보정은 생략하고 좌측상단 기점 근처에 표시
+            ctx.fillText(
+              room.roomName,
+              pxX1 + fontSize * 3,
+              pxY1 + fontSize * 3,
+            );
+            ctx.restore();
+          }
         });
       }
     };
@@ -368,8 +381,8 @@ export default function App() {
             방별 외곽 벽면 치수 계산기
           </h1>
           <p className="text-zinc-500 text-sm mt-2.5 font-medium leading-relaxed">
-            방을 구분하는 구획선(검은선)과 외곽선(붉은선)을 파악하여 사방에
-            치수선을 그립니다.
+            방을 구분하는 구획선(검은선)과 외곽선(붉은선)이 꺾이는 정가운데에서
+            보조선을 확장합니다.
           </p>
         </div>
 
@@ -413,8 +426,8 @@ export default function App() {
           >
             {isProcessing ? (
               <>
-                <Loader2 className="w-5 h-5 animate-spin" />각 방의 구획을
-                파악하고 사방의 치수선을 그리는 중...
+                <Loader2 className="w-5 h-5 animate-spin" />
+                선이 꺾이는 모서리를 찾아 치수 기점을 정렬하는 중...
               </>
             ) : analysisResult ? (
               "✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)"
