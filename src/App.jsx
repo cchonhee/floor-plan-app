@@ -52,9 +52,6 @@ export default function App() {
 
     let finalApiKey = "";
 
-    // 💡 [에러 해결] '-latest' 꼬리표를 떼고, 가장 안정적인 공식 명칭인 'gemini-1.5-pro'로 수정했습니다.
-    let modelName = "gemini-1.5-pro";
-
     try {
       if (
         typeof import.meta !== "undefined" &&
@@ -67,11 +64,11 @@ export default function App() {
       console.warn("환경 변수를 불러오지 못했습니다.", e);
     }
 
-    if (!finalApiKey) {
-      modelName = "gemini-2.5-flash-preview-09-2025";
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${finalApiKey}`;
+    // 💡 [궁극의 에러 해결] 404 에러 시 자동으로 사용 가능한 다른 모델을 순차적으로 찔러보는 스마트 알고리즘
+    // 1순위: 최신 유료(Pro), 2순위: 기본 유료(Pro), 3순위: 무조건 작동하는 고속 무료(Flash)
+    const modelsToTry = finalApiKey
+      ? ["gemini-1.5-pro-002", "gemini-1.5-pro", "gemini-1.5-flash"]
+      : ["gemini-2.5-flash-preview-09-2025"];
 
     const payload = {
       contents: [
@@ -172,8 +169,13 @@ export default function App() {
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const delays = [1000, 2000, 4000, 8000, 16000];
+    let currentModelIndex = 0;
+    let attempt = 0;
 
-    for (let attempt = 0; attempt <= delays.length; attempt++) {
+    while (attempt <= delays.length) {
+      let modelName = modelsToTry[currentModelIndex];
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${finalApiKey}`;
+
       try {
         const response = await fetch(url, {
           method: "POST",
@@ -183,6 +185,19 @@ export default function App() {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+
+          // 💡 404 에러 발생 시, 준비해둔 다음 대안 모델로 즉시 전환합니다!
+          if (
+            response.status === 404 &&
+            currentModelIndex < modelsToTry.length - 1
+          ) {
+            console.warn(
+              `${modelName} 접근 불가. 다음 모델(${modelsToTry[currentModelIndex + 1]})로 자동 전환합니다.`,
+            );
+            currentModelIndex++;
+            continue; // 에러를 뱉지 않고 딜레이 없이 즉시 다음 모델로 재시도
+          }
+
           throw new Error(
             `[상태 코드 ${response.status}] ${errorData.error?.message || "구글 서버 응답 오류"}`,
           );
@@ -204,12 +219,13 @@ export default function App() {
       } catch (err) {
         if (attempt === delays.length) {
           setError(
-            `🚨 구글 AI 통신 에러: ${err.message}\n\n💡 잠시 후 다시 시도해 주세요.`,
+            `🚨 구글 AI 통신 에러: ${err.message}\n\n💡 [안내] 시도 가능한 모든 모델에 접근할 수 없습니다. 구글 AI Studio에서 API 키의 권한 및 결제 설정(Billing)을 확인해 주세요.`,
           );
           setIsProcessing(false);
           return;
         }
         await sleep(delays[attempt]);
+        attempt++;
       }
     }
   };
@@ -516,7 +532,7 @@ export default function App() {
             {isProcessing ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                최고급 유료 모델(Pro)로 도면을 정밀 분석 중...
+                최적의 AI 모델을 찾아 도면을 분석 중입니다...
               </>
             ) : analysisResult ? (
               "✅ 계산 완료 (새 도면을 올리면 다시 활성화됩니다)"
