@@ -215,146 +215,225 @@ export default function App() {
       canvas.height = img.height;
       ctx.drawImage(img, 0, 0);
 
-      if (analysisResult && analysisResult.rooms) {
-        const fontSize = Math.max(12, Math.floor(canvas.width * 0.012));
+      if (analysisResult && analysisResult.plans) {
+        const fontSize = Math.max(13, Math.floor(canvas.width * 0.012));
+        const drawnTextBoxes = [];
 
-        analysisResult.rooms.forEach((room) => {
-          if (!room.segments) return;
+        const checkCollision = (box1) => {
+          return drawnTextBoxes.some((box2) => {
+            return !(
+              box1.right < box2.left ||
+              box1.left > box2.right ||
+              box1.bottom < box2.top ||
+              box1.top > box2.bottom
+            );
+          });
+        };
 
-          room.segments.forEach((seg) => {
-            // AI가 반환한 모서리 꺾이는 곳(선의 정가운데) 좌표
-            const pxX1 = (seg.x1 / 100) * canvas.width;
-            const pxY1 = (seg.y1 / 100) * canvas.height;
-            const pxX2 = (seg.x2 / 100) * canvas.width;
-            const pxY2 = (seg.y2 / 100) * canvas.height;
-            const isHorizontal = seg.orientation === "horizontal";
+        analysisResult.plans.forEach((plan) => {
+          if (!plan.segments || plan.segments.length === 0) return;
 
-            const offset = Math.max(25, canvas.width * 0.025); // 메인 치수선이 띄워지는 거리
-            const overrun = 8; // 보조선이 치수선을 넘어가는 길이
-            const tick = 6; // 사선 길이
+          const fillFactor = plan.fillFactor || 0.8;
+          const pxTotalW = (plan.totalW / 100) * canvas.width;
+          const pxTotalH = (plan.totalH / 100) * canvas.height;
+          const bbPixelArea = pxTotalW * pxTotalH;
+          const bbRealArea = plan.area / fillFactor;
+
+          const uniformScale = Math.sqrt(bbRealArea / bbPixelArea);
+
+          plan.segments.forEach((seg) => {
+            let pxX1 = (seg.x1 / 100) * canvas.width;
+            let pxY1 = (seg.y1 / 100) * canvas.height;
+            let pxX2 = (seg.x2 / 100) * canvas.width;
+            let pxY2 = (seg.y2 / 100) * canvas.height;
+
+            if (seg.orientation === "horizontal") {
+              const avgY = (pxY1 + pxY2) / 2;
+              pxY1 = pxY2 = avgY;
+              if (pxX1 > pxX2) {
+                let t = pxX1;
+                pxX1 = pxX2;
+                pxX2 = t;
+              }
+            } else {
+              const avgX = (pxX1 + pxX2) / 2;
+              pxX1 = pxX2 = avgX;
+              if (pxY1 > pxY2) {
+                let t = pxY1;
+                pxY1 = pxY2;
+                pxY2 = t;
+              }
+            }
+
+            const pxLen =
+              seg.orientation === "horizontal"
+                ? Math.abs(pxX2 - pxX1)
+                : Math.abs(pxY2 - pxY1);
+            const realLength = pxLen * uniformScale;
+
+            if (realLength < 0.1) return;
+
+            const prefix = seg.orientation === "horizontal" ? "W: " : "H: ";
+            const text = `${prefix}${realLength.toFixed(1)}m`;
+
+            const cx = (pxX1 + pxX2) / 2;
+            const cy = (pxY1 + pxY2) / 2;
+
+            const offset = Math.max(18, canvas.width * 0.018);
+            const gap = 0;
+            const overrun = 10;
+            const tickSize = 5;
 
             ctx.save();
-            ctx.strokeStyle = "#2563eb";
-            ctx.fillStyle = "#2563eb";
-            ctx.lineWidth = Math.max(1.5, Math.floor(canvas.width * 0.0015));
+            const drawColor = "#2563eb";
+            ctx.strokeStyle = drawColor;
+            ctx.fillStyle = drawColor;
+            ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
 
-            let dimLineX1 = pxX1,
-              dimLineY1 = pxY1,
-              dimLineX2 = pxX2,
-              dimLineY2 = pxY2;
-
-            // 💡 보조선(연장선)의 시작점: 무조건 굵은 붉은선/마젠타선의 '정가운데' (pxX, pxY)에서 시작!
-            let extStartX1 = pxX1,
-              extStartY1 = pxY1;
-            let extStartX2 = pxX2,
-              extStartY2 = pxY2;
-            let extEndX1 = pxX1,
-              extEndY1 = pxY1;
-            let extEndX2 = pxX2,
-              extEndY2 = pxY2;
-
-            if (isHorizontal) {
-              dimLineY1 = dimLineY2 =
-                seg.position === "top" ? pxY1 - offset : pxY1 + offset;
-              extEndY1 = extEndY2 =
-                seg.position === "top"
-                  ? dimLineY1 - overrun
-                  : dimLineY1 + overrun;
-            } else {
-              dimLineX1 = dimLineX2 =
-                seg.position === "left" ? pxX1 - offset : pxX1 + offset;
-              extEndX1 = extEndX2 =
-                seg.position === "left"
-                  ? dimLineX1 - overrun
-                  : dimLineX1 + overrun;
-            }
-
-            // 1. 치수 보조선(연장선) 긋기: 붉은선 한가운데서 시작해서 바깥으로 쭉 뻗어 나감
-            ctx.beginPath();
-            ctx.moveTo(extStartX1, extStartY1);
-            ctx.lineTo(extEndX1, extEndY1);
-            ctx.moveTo(extStartX2, extStartY2);
-            ctx.lineTo(extEndX2, extEndY2);
-            ctx.stroke();
-
-            // 2. 메인 치수선 긋기 (보조선을 가로지르는 선)
-            ctx.beginPath();
-            ctx.moveTo(dimLineX1, dimLineY1);
-            ctx.lineTo(dimLineX2, dimLineY2);
-            ctx.stroke();
-
-            // 3. 끝점 틱(사선) 긋기
-            ctx.beginPath();
-            if (isHorizontal) {
-              ctx.moveTo(dimLineX1 - tick, dimLineY1 + tick);
-              ctx.lineTo(dimLineX1 + tick, dimLineY1 - tick);
-              ctx.moveTo(dimLineX2 - tick, dimLineY2 + tick);
-              ctx.lineTo(dimLineX2 + tick, dimLineY2 - tick);
-            } else {
-              ctx.moveTo(dimLineX1 + tick, dimLineY1 - tick);
-              ctx.lineTo(dimLineX1 - tick, dimLineY1 + tick);
-              ctx.moveTo(dimLineX2 + tick, dimLineY2 - tick);
-              ctx.lineTo(dimLineX2 - tick, dimLineY2 + tick);
-            }
-            ctx.lineWidth = Math.max(2.5, Math.floor(canvas.width * 0.0025));
-            ctx.stroke();
-
-            // 4. 수치 텍스트 작성 (글씨 뒤에 하얀 배경 깔기)
-            const cx = (dimLineX1 + dimLineX2) / 2;
-            const cy = (dimLineY1 + dimLineY2) / 2;
-            let textX = cx;
-            let textY = cy;
-
-            if (isHorizontal) {
-              textY =
-                seg.position === "top"
-                  ? dimLineY1 - fontSize * 0.8
-                  : dimLineY1 + fontSize * 0.8;
-            } else {
-              textX =
-                seg.position === "left"
-                  ? dimLineX1 - fontSize * 2.5
-                  : dimLineX1 + fontSize * 2.5;
-            }
-
-            ctx.font = `bold ${fontSize}px sans-serif`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            const tw = ctx.measureText(seg.text).width;
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            const tw = ctx.measureText(text).width;
 
-            ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
-            ctx.fillRect(
-              textX - tw / 2 - 4,
-              textY - fontSize / 2 - 4,
-              tw + 8,
-              fontSize + 8,
-            );
+            if (seg.orientation === "horizontal") {
+              const isTop = seg.position === "top";
 
-            ctx.fillStyle = "#2563eb";
-            ctx.fillText(seg.text, textX, textY);
+              const yLine = isTop ? cy - offset : cy + offset;
+              const extStart = isTop ? cy - gap : cy + gap;
+              const extEnd = isTop ? yLine - overrun : yLine + overrun;
 
+              ctx.beginPath();
+              ctx.moveTo(pxX1, extStart);
+              ctx.lineTo(pxX1, extEnd);
+              ctx.moveTo(pxX2, extStart);
+              ctx.lineTo(pxX2, extEnd);
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.moveTo(pxX1, yLine);
+              ctx.lineTo(pxX2, yLine);
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.moveTo(pxX1 - tickSize, yLine + tickSize);
+              ctx.lineTo(pxX1 + tickSize, yLine - tickSize);
+              ctx.moveTo(pxX2 - tickSize, yLine + tickSize);
+              ctx.lineTo(pxX2 + tickSize, yLine - tickSize);
+              ctx.stroke();
+
+              let textY = isTop
+                ? yLine - fontSize * 0.8
+                : yLine + fontSize * 0.8;
+              let box = {
+                left: cx - tw / 2 - 6,
+                right: cx + tw / 2 + 6,
+                top: textY - fontSize / 2 - 4,
+                bottom: textY + fontSize / 2 + 4,
+              };
+
+              let shiftCount = 0;
+              while (checkCollision(box) && shiftCount < 5) {
+                textY += isTop ? -(fontSize * 1.5) : fontSize * 1.5;
+                box.top = textY - fontSize / 2 - 4;
+                box.bottom = textY + fontSize / 2 + 4;
+                shiftCount++;
+              }
+              drawnTextBoxes.push(box);
+
+              if (shiftCount > 0) {
+                const originalTextY = isTop
+                  ? yLine - fontSize * 0.8
+                  : yLine + fontSize * 0.8;
+                ctx.beginPath();
+                ctx.moveTo(cx, originalTextY);
+                ctx.lineTo(cx, isTop ? box.bottom : box.top);
+                ctx.setLineDash([3, 3]);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
+              }
+
+              ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+              ctx.fillRect(
+                box.left,
+                box.top,
+                box.right - box.left,
+                box.bottom - box.top,
+              );
+
+              ctx.fillStyle = drawColor;
+              ctx.fillText(text, cx, textY);
+            } else {
+              const isLeft = seg.position === "left";
+
+              const xLine = isLeft ? cx - offset : cx + offset;
+              const extStart = isLeft ? cx - gap : cx + gap;
+              const extEnd = isLeft ? xLine - overrun : xLine + overrun;
+
+              ctx.beginPath();
+              ctx.moveTo(extStart, pxY1);
+              ctx.lineTo(extEnd, pxY1);
+              ctx.moveTo(extStart, pxY2);
+              ctx.lineTo(extEnd, pxY2);
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.moveTo(xLine, pxY1);
+              ctx.lineTo(xLine, pxY2);
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.moveTo(xLine - tickSize, pxY1 + tickSize);
+              ctx.lineTo(xLine + tickSize, pxY1 - tickSize);
+              ctx.moveTo(xLine - tickSize, pxY2 + tickSize);
+              ctx.lineTo(xLine + tickSize, pxY2 - tickSize);
+              ctx.stroke();
+
+              let textX = isLeft ? xLine - tw / 2 - 8 : xLine + tw / 2 + 8;
+              let box = {
+                left: textX - tw / 2 - 6,
+                right: textX + tw / 2 + 6,
+                top: cy - fontSize / 2 - 4,
+                bottom: cy + fontSize / 2 + 4,
+              };
+
+              let shiftCount = 0;
+              while (checkCollision(box) && shiftCount < 5) {
+                textX += isLeft ? -(tw * 0.8) : tw * 0.8;
+                box.left = textX - tw / 2 - 6;
+                box.right = textX + tw / 2 + 6;
+                shiftCount++;
+              }
+              drawnTextBoxes.push(box);
+
+              if (shiftCount > 0) {
+                const originalTextX = isLeft
+                  ? xLine - tw / 2 - 8
+                  : xLine + tw / 2 + 8;
+                ctx.beginPath();
+                ctx.moveTo(xLine, cy);
+                ctx.lineTo(isLeft ? box.right : box.left, cy);
+                ctx.setLineDash([3, 3]);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.lineWidth = Math.max(2, Math.floor(canvas.width * 0.002));
+              }
+
+              ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+              ctx.fillRect(
+                box.left,
+                box.top,
+                box.right - box.left,
+                box.bottom - box.top,
+              );
+
+              ctx.fillStyle = drawColor;
+              ctx.fillText(text, textX, cy);
+            }
             ctx.restore();
           });
-
-          // 방 이름 연하게 표시
-          if (room.segments.length > 0) {
-            ctx.save();
-            ctx.fillStyle = "rgba(220, 38, 38, 0.35)";
-            ctx.font = `bold ${fontSize * 1.5}px sans-serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            // 첫 선분을 이용해 대략적인 중앙 찾기
-            const firstSeg = room.segments[0];
-            const pxX1 = (firstSeg.x1 / 100) * canvas.width;
-            const pxY1 = (firstSeg.y1 / 100) * canvas.height;
-            // 텍스트 위치 보정은 생략하고 좌측상단 기점 근처에 표시
-            ctx.fillText(
-              room.roomName,
-              pxX1 + fontSize * 3,
-              pxY1 + fontSize * 3,
-            );
-            ctx.restore();
-          }
         });
       }
     };
