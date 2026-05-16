@@ -52,8 +52,8 @@ export default function App() {
 
     let finalApiKey = "";
 
-    // 💡 [에러 해결] 구글 서버가 요구하는 유료 모델의 정확한 풀네임으로 수정했습니다.
-    let modelName = "gemini-1.5-pro-latest";
+    // 💡 [에러 해결] '-latest' 꼬리표를 떼고, 가장 안정적인 공식 명칭인 'gemini-1.5-pro'로 수정했습니다.
+    let modelName = "gemini-1.5-pro";
 
     try {
       if (
